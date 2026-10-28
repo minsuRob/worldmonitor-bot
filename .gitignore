@@ -1,0 +1,8 @@
+state/
+logs/
+__pycache__/
+*.db
+*.db-*
+.env*
+worldmonitor/
+tools/
