@@ -1,0 +1,49 @@
+# 모의 장부 5개 (BASE · A · B · C · D)
+
+[← 인덱스](../../CLAUDE.md) · 코드: `desk/manual/book_rules.py`(`OVERRIDES`, `PARAMS`, `precheck`, `postcheck`, `run30_check`, `decide`, `book_exits`), `desk/config.py`(BASE 값), `desk/manual/run_variants.py`(`rules(v)`로 오버라이드 적용)
+
+각 장부는 **독립된 $1,000 모의 계좌**다. 원장: BASE는 `desk/state/desk.db`, A~D는 `desk/state/variants/<V>.db`(스키마 동일, git 제외).
+아래 값은 2026-10-29 코드 기준이다. 숫자를 바꾸면 이 표와 `desk/README.md`도 같이 고친다.
+
+## 장부별 규칙
+| 장부 | VET (BASE와 다른 점) | 크기 | 매수 규칙 | 매도 |
+|---|---|---|---|---|
+| BASE | 최대 보유자 ≤5%, 유동성 ≥$10k 및 주문의 50배, h1 <25% (`config.py`) | Kelly 8.33%(가정값) → 6% 상한 (~$60) | Claude `BUY` | 공통 RISK |
+| A | BASE와 같음 | BASE와 같음 | EV = p_win×payoff − (1−p_win) − 0.03 > 0 (Claude의 BUY/SKIP 단어는 무시) | 공통 RISK |
+| B | 최대 보유자 ≤8% (2026-10-29 이전 C 원장을 옮김) | BASE와 같음 | Claude `BUY` | 공통 RISK |
+| C 모멘텀 추종 | 최대 보유자 ≤8%, h1 +10%~<150%, h6 ≥0, m5 > −8%, m5 매수 ≥ 매도 | 잔고의 고정 10%, 최대 5개 보유 | EV > 0 (A와 같은 식) | RISK + 손절 −20%, 2배에서 50% 매도, 그 뒤 고점 대비 −25% |
+| D 초기 스나이퍼 | 최대 보유자 ≤10%, 페어 나이 5분~24시간, 유동성 ≥$5k, 보유자 ≥50(보유자 수를 모르면 이 검사는 통과), m5 매수/매도 ≥1.3 (매수 ≥10), 거래량 m5×12/h1 ≥1.2, m5 > −15%, h1 <300%, **호가 토큰 SOL/USDC/USDT만**, **30분 2.5배 추격 금지** | 잔고의 고정 5%, 최대 10개 보유, 왕복 슬리피지 예산 4% | 수치 신호로 매수, Claude는 러그 **거부권**만 (`D_SYSTEM` 프롬프트, 무응답 = SKIP) | RISK + 손절 −35%, 3배에서 50% 매도, 그 뒤 고점 대비 −40% |
+
+## 모든 장부 공통
+- **최소 주문 $30** (`config.MIN_ORDER = 30.0`). 계획 금액이 $30 미만이면 `ZERO`(미체결). 수수료가 주문의 2%를 넘어도 `ZERO`.
+- 크기 상한: 묶이지 않은 현금, 유동성/50, 슬리피지 예산(`SLIPPAGE_BUDGET`, D만 4%).
+- **공통 RISK가 먼저** 돈다(`bots.risk_cycle`): `UNMEASURABLE` 청산, `VOL_RATIO<0.20` 청산, `FLAG_MCAP_+60`은 표시만. 장부별 매도(`book_exits`)는 그 뒤에 RISK가 방금 쓴 가격으로만 판단하며 추가 API 호출이 없다. → [desk-bots.md](desk-bots.md#공통-risk-botsrisk_cycle--모든-장부-동일-아무도-뒤집지-않음)
+- BASE·A·B에는 손절·익절·추적 손절이 **없다**. 거래량 붕괴나 측정 실패 때만 판다.
+- Claude 결과가 없으면 `NO_JUDGE`, 파싱 실패면 `JUDGE_UNPARSEABLE`, 작업 상한을 넘으면 `OVER_JOB_CAP` → 모두 SKIP.
+
+## D 진입 필터 상세 (2026-10-29 추가, D만)
+| 필터 | 규칙 | 거절 코드 | 상수 |
+|---|---|---|---|
+| 호가 토큰 | DexScreener `pair.quoteToken.address`가 SOL(WSOL)/USDC/USDT 주소가 아니면 거절. API 호출 없음 | `D_quote_not_sol` | `D_QUOTE_ALLOW` |
+| 추격 금지 | GeckoTerminal 1분봉으로 최근 30분 안의 (저점 → 그 뒤 고점) 최대 배수 `run30` ≥ 2.5면 거절. D의 다른 검사를 모두 통과한 후보만 조회 | `D_run30_ge_2.5x` | `D_RUN30_WINDOW_MIN=30`, `D_RUN30_MAX_MULT=2.5` |
+| 데이터 실패 | 1분봉을 못 가져오거나 창 안에 봉이 없으면 **사지 않음**(fail closed) | `D_run30_unknown` | `GT_RETRY_SLEEPS=(3, 8)` |
+
+배경: 토큰 "0"(0/ZEC 풀, 30분에 약 3.7배 오른 직후 매수) 손절 사례. 분석 자료 `desk/analysis/d_cadence_0/README.md`.
+
+## 매도 규칙 코드 (`book_exits`)
+| 규칙 이름 | 의미 |
+|---|---|
+| `C_STOP_-20%`, `D_STOP_-35%` | 현재가 ≤ 진입가 × (1 − 손절폭) → 전량 청산 |
+| `C_TP_50%_AT_2x`, `D_TP_50%_AT_3x` | 현재가 ≥ 진입가 × 배수 → 50% 부분 매도(1회, `vexit.tp_done`) |
+| `C_TRAIL_-25%_FROM_PEAK`, `D_TRAIL_-40%_FROM_PEAK` | 부분 매도 뒤 현재가 ≤ 고점 × (1 − 폭) → 나머지 청산 |
+
+## 이력
+- 2026-10-29 재설계: 예전 B(h1 75%), C(보유자 8%), D(Kelly 12%) 원장은 `desk/state/variants/archive-20261029/`로 보관. 예전 C.db → 새 B.db. 새 C·D는 $1,000에서 시작.
+- 2026-10-29: 최소 주문 $50 → $30 (모든 장부). `docs/guide-params.md`의 "$50"은 원 가이드 값이고 코드는 $30이다.
+- 2026-10-29: D 진입 필터 2개 추가.
+
+## 장부 규칙을 고칠 때
+1. 값은 `book_rules.py`의 `OVERRIDES`/`PARAMS`에서만 바꾼다(`run_variants.py`는 일반 로직).
+2. 공통 RISK(`bots.risk_cycle`)를 장부별로 끄거나 느슨하게 하지 않는다.
+3. `python3 manual/tests/test_books_v2.py`, `test_d_entry_filters.py`를 돌린다 → [testing.md](testing.md)
+4. `desk/README.md` 표와 이 문서를 같이 고친다.
