@@ -37,22 +37,28 @@ def cost(market, side, value, qty, instrument="STOCK"):
         other = C.US_SEC_FEE_SELL * value + min(C.US_FINRA_TAF_PER_SHARE * qty, C.US_FINRA_TAF_MAX)
     return {"fee": round(fee, 4), "tax": 0.0, "other": round(other, 4)}
 
-def _fill(market, value_req, px, cap_value, liquidity_ref, side="BUY", instrument="STOCK"):
-    """Shared: cap by liquidity, round qty, apply costs. value_req in market currency."""
+def _fill(market, value_req, px, cap_value, liquidity_ref, side="BUY", instrument="STOCK", one_share_max=None):
+    """Shared: cap by liquidity, round qty, apply costs. value_req in market currency.
+    one_share_max: when the planned value buys 0 whole shares, buy ONE share if it costs <= one_share_max (the caller passes
+    RISK's limit: min(MAX_POSITION_PCT * equity, free cash)) and <= the liquidity cap. Small books can then hold dear stocks."""
     if px is None or px <= 0: return {"status": "NO_PRICE", "qty": 0.0, "value": 0.0}
     want = value_req if cap_value is None else min(value_req, cap_value)
     qty = round_qty(market, want / px)
+    rounded_up = False
+    if qty <= 0 and C.ONE_SHARE_ROUNDUP and one_share_max and px <= one_share_max and (cap_value is None or px <= cap_value):
+        qty, rounded_up = 1.0, True
     value = qty * px
     if qty <= 0 or value < min_order(market):
         why = (f"one share ({px:,.0f}) costs more than the allowed value {want:,.0f}" if qty <= 0 else f"{value:,.0f} below min order {min_order(market):,.0f}")
         return {"status": "ZERO", "qty": 0.0, "value": 0.0, "price": px, "partial": 0, "liquidity_ref": liquidity_ref,
                 "fee": 0.0, "tax": 0.0, "other": 0.0, "detail": f"{why} (requested {value_req:,.0f}, cap {cap_value if cap_value is not None else 'none'})"}
     cst = cost(market, side, value, qty, instrument)
-    partial = 1 if (cap_value is not None and cap_value < value_req) else 0   # share rounding alone is not a partial fill
+    partial = 1 if (not rounded_up and cap_value is not None and cap_value < value_req) else 0   # share rounding alone is not a partial fill
     return {"status": "PARTIAL" if partial else "FILLED", "qty": qty, "value": round(value, 4), "price": px, "partial": partial,
-            "liquidity_ref": liquidity_ref, **cst, "detail": f"cap={cap_value if cap_value is not None else 'none'}"}
+            "liquidity_ref": liquidity_ref, **cst,
+            "detail": f"cap={cap_value if cap_value is not None else 'none'}" + (f"; rounded up to 1 share (planned {value_req:,.0f})" if rounded_up else "")}
 
-def fill_close_auction(market, value_req, close_px, auction_turnover=None, day_turnover=None, instrument="STOCK"):
+def fill_close_auction(market, value_req, close_px, auction_turnover=None, day_turnover=None, instrument="STOCK", one_share_max=None):
     """KRX closing auction: fill at the close, <= CB_AUCTION_CAP_PCT of the auction turnover.
     Auction turnover unknown -> ASSUMED share of the day's turnover (liquidity_ref='assumed')."""
     if auction_turnover:
@@ -61,9 +67,9 @@ def fill_close_auction(market, value_req, close_px, auction_turnover=None, day_t
         cap, ref = C.CB_AUCTION_CAP_PCT * day_turnover * C.ASSUMED_CLOSE_AUCTION_SHARE, "assumed"
     else:
         cap, ref = None, "none"
-    return _fill(market, value_req, close_px, cap, ref, "BUY", instrument)
+    return _fill(market, value_req, close_px, cap, ref, "BUY", instrument, one_share_max)
 
-def fill_open(market, side, value_req_or_qty, open_px, prev_turnover=None, instrument="STOCK"):
+def fill_open(market, side, value_req_or_qty, open_px, prev_turnover=None, instrument="STOCK", one_share_max=None):
     """Open print with OPEN_SLIP_BPS adverse slip. BUY: value_req, capped by OPEN_CAP_PCT * previous turnover.
     SELL: qty (whole position), no cap (exits always fill, the price just slips)."""
     if open_px is None or open_px <= 0: return {"status": "NO_PRICE", "qty": 0.0, "value": 0.0}
@@ -71,7 +77,7 @@ def fill_open(market, side, value_req_or_qty, open_px, prev_turnover=None, instr
     if side == "BUY":
         px = open_px + slip
         cap = C.OPEN_CAP_PCT * prev_turnover if prev_turnover else None
-        return _fill(market, value_req_or_qty, px, cap, "prev_turnover" if cap is not None else "none", "BUY", instrument)
+        return _fill(market, value_req_or_qty, px, cap, "prev_turnover" if cap is not None else "none", "BUY", instrument, one_share_max)
     px = max(open_px - slip, 0.0)
     qty = value_req_or_qty; value = qty * px
     cst = cost(market, "SELL", value, qty, instrument)

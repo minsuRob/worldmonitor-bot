@@ -65,6 +65,7 @@ CB_AUCTION_CAP_PCT = 0.005               # closing-auction fill <= 0.5% of the a
 ASSUMED_CLOSE_AUCTION_SHARE = 0.08       # auction turnover unknown -> 8% of the day's turnover (fill row liquidity_ref="assumed")
 OPEN_CAP_PCT = 0.002                     # open fill <= 0.2% of the previous day's turnover
 OPEN_SLIP_BPS = 5                        # open fills are worse than the print by 5 bps
+ONE_SHARE_ROUNDUP = True                 # planned value < 1 share -> buy 1 share if it fits RISK's cap (min(MAX_POSITION_PCT*equity, free cash))
 MIN_ORDER_KRW = 10_000.0                 # below this the order is ZERO (not filled)
 MIN_ORDER_USD = 5.0
 

@@ -20,6 +20,20 @@ f = F.fill_close_auction("KRX", 5_000, 1_000, auction_turnover=1e9)
 check("below MIN_ORDER_KRW -> ZERO", f["status"] == "ZERO" and "min order" in f["detail"], f)
 check("no price -> NO_PRICE", F.fill_close_auction("KRX", 1e5, None)["status"] == "NO_PRICE")
 
+# ---- one-share round-up (small books, dear stocks)
+f = F.fill_open("KRX", "BUY", 100_000, 150_000, prev_turnover=1e12, one_share_max=200_000)
+check("round-up: 1 share when it fits RISK's limit", f["status"] == "FILLED" and f["qty"] == 1 and "rounded up" in f["detail"] and f["partial"] == 0, f)
+f = F.fill_open("KRX", "BUY", 100_000, 250_000, prev_turnover=1e12, one_share_max=200_000)
+check("round-up refused above RISK's limit", f["status"] == "ZERO", f)
+f = F.fill_open("KRX", "BUY", 100_000, 150_000, prev_turnover=1e7, one_share_max=200_000)    # liquidity cap 20,000 < 1 share
+check("round-up refused above the liquidity cap", f["status"] == "ZERO", f)
+check("no one_share_max -> old behaviour (ZERO)", F.fill_open("KRX", "BUY", 100_000, 150_000, prev_turnover=1e12)["status"] == "ZERO")
+C.ONE_SHARE_ROUNDUP = False
+check("round-up switch off", F.fill_open("KRX", "BUY", 100_000, 150_000, prev_turnover=1e12, one_share_max=200_000)["status"] == "ZERO")
+C.ONE_SHARE_ROUNDUP = True
+f = F.fill_close_auction("KRX", 100_000, 150_000, auction_turnover=1e12, one_share_max=200_000)
+check("round-up also in the closing auction", f["qty"] == 1, f)
+
 # ---- open fills
 f = F.fill_open("KRX", "BUY", 100_000, 10_000, prev_turnover=1e10)
 check("open BUY slips up 5bps", abs(f["price"] - 10_005) < 1e-6 and f["qty"] == 9, f)                 # 100000/10005 = 9.99 -> 9

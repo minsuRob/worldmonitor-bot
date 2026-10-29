@@ -6,6 +6,10 @@ from .base import Strategy, Candidate
 class MomentumMixin:
     PARAMS = {"top_n": 10, "lookback": 252, "skip": 20, "high52_prox": 0.10, "rebal_weekday": 4, "size_frac": 0.10, "max_open": 10}   # ASSUMED
 
+    def universe_filter(self, rows):
+        """Stocks only: ETFs/ETNs (e.g. CD-rate money-market ETFs that sit at their 52w high) are not momentum names."""
+        return [r for r in super().universe_filter(rows) if (r.get("instrument") or "STOCK") == "STOCK"]
+
     def is_rebalance_day(self, day):
         return datetime.date.fromisoformat(day).weekday() == self.p("rebal_weekday")
 

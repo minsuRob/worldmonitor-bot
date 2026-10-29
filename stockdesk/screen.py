@@ -91,6 +91,20 @@ def _fill_from_bars(c, market, day, snap):
         if s.get("change_pct") is None and prev and prev[-1]["c"] and s.get("price"):
             s["change_pct"] = (s["price"] / prev[-1]["c"] - 1) * 100
 
+# After the regular session the Toss "realtime" ranking/prices follow the NXT after-market (KRX) / after-hours (US):
+# measured 2026-10-29 17:55 KST, 005930 turnover 447억 realtime vs ~10조 from the daily bar. Slots that mark the
+# regular close therefore take price/OHLC/volume/turnover/change from today's daily bar instead.
+REGULAR_CLOSE_SLOTS = ("krx_close", "krx_after", "us_close")
+
+def _regular_close_from_bars(c, market, day, snap):
+    """Overwrite snapshot rows with today's daily bar (regular session). Rows without today's bar are left as they are."""
+    for s in snap:
+        b = M.get_bars(c, market, s["code"], 2, day)
+        if not b or b[-1]["date"] != day: continue
+        last = b[-1]; prev = b[-2] if len(b) > 1 and b[-2]["date"] < day else None
+        s.update(price=last["c"], open=last["o"], high=last["h"], low=last["l"], volume=last["v"],
+                 turnover=last["turnover"], change_pct=((last["c"] / prev["c"] - 1) * 100) if prev and prev["c"] else s.get("change_pct"))
+
 def _refresh_universe_krx(c, toss, day, held, lg):
     """Once a day: top KRX_UNIVERSE_TOP by 1-month trading amount (+ held), names/type/shares from /stocks, mcap = shares*price."""
     kv = M.KVStore(c)
@@ -130,6 +144,7 @@ def _fetch_krx(c, slot, day, held, lg):
                                          "open": None, "high": None, "low": None, "auction_turnover": None}
     _refresh_bars(c, toss, "KRX", set(snap) | set(held), day, lg)
     snap_rows = list(snap.values()); _fill_from_bars(c, "KRX", day, snap_rows)
+    if slot in REGULAR_CLOSE_SLOTS: _regular_close_from_bars(c, "KRX", day, snap_rows)
     M.put_snap(c, day, slot, "KRX", snap_rows, "toss")
     # flags: /stocks for everything we may hold or buy, /warnings for ranked + held (STOCK group: 5/s published, 4/s used)
     ranked = {r["code"] for r in rows if r.get("code")}
@@ -137,6 +152,13 @@ def _fetch_krx(c, slot, day, held, lg):
     fl_w, _ = toss.stock_flags_many("KRX", sorted(ranked | set(held)), day, with_warnings=True)
     fl_all.update(fl_w)
     M.put_flags(c, "KRX", day, {code: v["flags"] for code, v in fl_all.items()}, "toss")
+    # name / instrument for snapshot codes outside the top-N universe (CB ranks the whole snapshot). avg_turnover stays
+    # None, so universe_filter() of the other books still ignores them.
+    known = {u["code"] for u in M.universe(c, "KRX")}
+    extra = [{"code": code, "name": v.get("name"), "instrument": v.get("instrument") or "STOCK", "sector": v.get("market"),
+              "mcap": (v["shares"] * snap[code]["price"]) if v.get("shares") and snap.get(code, {}).get("price") else None, "avg_turnover": None}
+             for code, v in fl_all.items() if code not in known]
+    if extra: M.put_universe(c, "KRX", extra)
     if slot == "krx_after":   # investor flow (net volume -> value at that day's close)
         flow = []
         inst = {u["code"]: u.get("instrument") for u in M.universe(c, "KRX")}
@@ -174,7 +196,9 @@ def _fetch_us(c, slot, day, held, lg):
             if err or not bars: lg.warning(f"us bars {code}: {err}"); continue
             M.put_bars(c, "US", code, _norm_bars(bars), "stooq"); src = "stooq"
     if snap:
-        _fill_from_bars(c, "US", day, snap); M.put_snap(c, day, slot, "US", snap, src)
+        _fill_from_bars(c, "US", day, snap)
+        if slot in REGULAR_CLOSE_SLOTS: _regular_close_from_bars(c, "US", day, snap)   # us_er keeps the after-hours price (ER-US gap)
+        M.put_snap(c, day, slot, "US", snap, src)
     if slot in ("us_close", "us_er"):
         fx = None; fsrc = "toss"
         if toss is not None: fx, _ = toss.fx_rate()

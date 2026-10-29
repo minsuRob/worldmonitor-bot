@@ -20,8 +20,10 @@ class CB(Strategy):
 
     def screen(self, ctx):
         out = []
+        inst = {u["code"]: (u.get("instrument") or "STOCK") for u in ctx.universe}
         for r in ctx.snap.rank("turnover", self.p("top_by_turnover")):
             code = r["code"]
+            if inst.get(code, "UNKNOWN") != "STOCK": continue   # stocks only: no leveraged/inverse ETFs, no unknown instruments
             if (r["turnover"] or 0) < self.p("min_turnover_krw"): continue
             chg = (r["change_pct"] or 0) / 100
             if not (self.p("min_chg") <= chg <= self.p("max_chg")): continue
@@ -48,9 +50,9 @@ class CB(Strategy):
 
     def describe(self, lang="ko"):
         d = super().describe(lang); p = self.PARAMS
-        d["screen"] = {"ko": f"15:00 거래대금 상위 {p['top_by_turnover']} 중 거래대금 ≥{p['min_turnover_krw'] / 1e8:g}억, 당일 +{p['min_chg'] * 100:g}~{p['max_chg'] * 100:g}%, "
+        d["screen"] = {"ko": f"15:00 거래대금 상위 {p['top_by_turnover']}(개별 주식만, ETF·ETN 제외) 중 거래대금 ≥{p['min_turnover_krw'] / 1e8:g}억, 당일 +{p['min_chg'] * 100:g}~{p['max_chg'] * 100:g}%, "
                              f"종가/고가 ≥{p['close_strength']:g}, {p['new_high_days']}일 신고가; 상위 {p['max_picks']}개",
-                       "en": f"top {p['top_by_turnover']} by turnover at 15:00, turnover >= {p['min_turnover_krw']:,.0f} KRW, day +{p['min_chg'] * 100:g}..{p['max_chg'] * 100:g}%, "
+                       "en": f"top {p['top_by_turnover']} by turnover at 15:00 (stocks only, no ETF/ETN), turnover >= {p['min_turnover_krw']:,.0f} KRW, day +{p['min_chg'] * 100:g}..{p['max_chg'] * 100:g}%, "
                              f"close/high >= {p['close_strength']:g}, {p['new_high_days']}d new high; best {p['max_picks']}"}[lang]
         d["exits"] = {"ko": "공통 RISK + **다음 시초가 항상 매도**", "en": "shared RISK + always sell at the next open"}[lang]
         d["size"] += {"ko": " (15:20 동시호가 체결, 동시호가 거래대금 상한)", "en": " (closing-auction fill, capped by auction turnover)"}[lang]

@@ -57,7 +57,9 @@ def run(code, d_from, d_to):
         for o in pending:
             if o["code"] in pos: continue
             if o["kind"] == "CLOSE_AUCTION": continue
-            f = F.fill_open(market, "BUY", min(o["value"], cash), view.open_price(o["code"]), view.prev_turnover(o["code"]), o["instrument"])
+            eq_now = cash + sum(p["qty"] * p.get("last", p["entry_price"]) for p in pos.values())
+            f = F.fill_open(market, "BUY", min(o["value"], cash), view.open_price(o["code"]), view.prev_turnover(o["code"]), o["instrument"],
+                            min(C.MAX_POSITION_PCT * eq_now, cash))
             if f["status"] not in ("FILLED", "PARTIAL"): continue
             total = f["value"] + f["fee"] + f["tax"] + f["other"]; cash -= total
             pos[o["code"]] = {"id": 0, "code": o["code"], "market": market, "qty": f["qty"], "entry_price": f["price"], "peak_price": f["price"], "cost": total,
@@ -74,7 +76,8 @@ def run(code, d_from, d_to):
             value = min(st.size(eq, cand), C.MAX_POSITION_PCT * eq)
             kind, _ = st.order_kind(cand)
             if kind == "CLOSE_AUCTION":   # CB: buy at today's close now, sell at the next open (exits)
-                f = F.fill_close_auction(market, min(value, cash), view.mark(cand.code), None, (view.snap(cand.code) or {}).get("turnover"), cand.instrument)
+                f = F.fill_close_auction(market, min(value, cash), view.mark(cand.code), None, (view.snap(cand.code) or {}).get("turnover"), cand.instrument,
+                                         min(C.MAX_POSITION_PCT * eq, cash))
                 if f["status"] in ("FILLED", "PARTIAL"):
                     total = f["value"] + f["fee"] + f["tax"] + f["other"]; cash -= total
                     pos[cand.code] = {"id": 0, "code": cand.code, "market": market, "qty": f["qty"], "entry_price": f["price"], "peak_price": f["price"], "cost": total,

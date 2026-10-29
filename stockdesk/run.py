@@ -243,14 +243,16 @@ def _fill_pending(c, st, snap, slot, day):
         if kv_get(c, "halted", False):
             c.execute("UPDATE orders SET status='CANCELLED', reason='HALTED' WHERE id=?", (o["id"],)); continue
         code = o["code"]; inst = next((u.get("instrument") for u in SC.load_universe(M.mdb(), st.market) if u["code"] == code), "STOCK") or "STOCK"
+        # RISK's per-position limit, with this order's own reservation added back to free cash
+        one_max = min(C.MAX_POSITION_PCT * equity_now(c), cash(c) - (encumbered(c) - (o["value_req"] or 0)))
         if o["kind"] == "CLOSE_AUCTION":
             r = snap.snap(code)
-            f = F.fill_close_auction(st.market, o["value_req"], snap.mark(code), r["auction_turnover"] if r else None, r["turnover"] if r else None, inst)
+            f = F.fill_close_auction(st.market, o["value_req"], snap.mark(code), r["auction_turnover"] if r else None, r["turnover"] if r else None, inst, one_max)
         elif o["kind"] == "LIMIT":
             r = snap.snap(code)
             f = F.fill_limit(st.market, "BUY", o["value_req"], o["limit_px"], r["low"] if r else None, r["high"] if r else None, inst)
         else:
-            f = F.fill_open(st.market, "BUY", o["value_req"], snap.open_price(code), snap.prev_turnover(code), inst)
+            f = F.fill_open(st.market, "BUY", o["value_req"], snap.open_price(code), snap.prev_turnover(code), inst, one_max)
         if f["status"] in ("NO_PRICE", "EXPIRED", "ZERO"):
             c.execute("UPDATE orders SET status=?, reason=?, detail=? WHERE id=?", (f["status"], f.get("detail", ""), "", o["id"]))
             event(c, "FILLS", f["status"], {"code": code, "kind": o["kind"]}); continue
