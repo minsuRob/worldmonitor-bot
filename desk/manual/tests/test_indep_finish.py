@@ -2,7 +2,7 @@
 import sys, json, os, glob, subprocess, types
 os.environ["CLAUDE_CLI_MAX_JOBS"] = "7"
 sys.path.insert(0, "/tmp/deskdry2"); sys.path.insert(0, "/tmp/deskdry2/manual")
-exec(open("/tmp/deskedit/test_indep.py").read().split("rv.prepare()")[0].replace('os.environ["CLAUDE_CLI_MAX_JOBS"] = sys.argv[1] if len(sys.argv) > 1 else "40"', ""))
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_indep.py")).read().split("rv.prepare()")[0].replace('os.environ["CLAUDE_CLI_MAX_JOBS"] = sys.argv[1] if len(sys.argv) > 1 else "40"', ""))
 rv.prepare()
 cyc = json.load(open(sorted(glob.glob("/tmp/deskdry2/manual/variant_cycles/meme-var-*[0-9].json"))[-1]))
 rid = cyc["run_id"]; rundir = f"/tmp/deskdry2_store/{rid}"
@@ -15,7 +15,9 @@ with open(f"{rundir}/stored.jsonl", "w") as f:
               "A": {"decision": "SKIP", "confidence": .5, "p_win": .6, "payoff_ratio": 2.0, "rationale": "fake"}}.get(j["book"],
               {"decision": "SKIP", "confidence": .4, "p_win": .2, "payoff_ratio": 1.0, "rationale": "fake-" + j["book"]})
         f.write(json.dumps({"jobId": j["id"], "ok": True, "parsedJson": pj, "durationMs": 1, "claudeModel": "fake", "apiKeySource": "none"}) + "\n")
-open(f"{rundir}/results.jsonl", "w").write("x\n")
+# runner results.jsonl: one valid new-format line (requestedModel/effort) + one bad line that must be skipped, not crash finish
+open(f"{rundir}/results.jsonl", "w").write(json.dumps({"id": cyc["jobs"][0]["id"], "ok": True, "requestedModel": "fable", "requestedEffort": "medium"}) + "\nx\n")
+assert rv.runner_requested(rundir) == {cyc["jobs"][0]["id"]: ("fable", "medium")}
 rv.subprocess = types.SimpleNamespace(run=lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="[import] fake ok", stderr=""))
 rv.finish(rid)
 res = json.load(open(f"/tmp/deskdry2/manual/variant_cycles/{rid}.result.json"))
