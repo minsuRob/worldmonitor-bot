@@ -1,6 +1,8 @@
 # 테스트
 
-[← 인덱스](../../CLAUDE.md) · 위치: `desk/manual/tests/`
+[← 인덱스](../../CLAUDE.md) · 위치: `desk/manual/tests/` (레거시 코인 데스크)
+
+> 주식 데스크(`stockdesk/`, 현재 주력) 테스트는 [stockdesk/testing.md](stockdesk/testing.md)를 본다.
 
 모든 테스트는 `desk/`에서 실행한다. 네트워크 없이 도는 것은 실제 장부를 건드리지 않는다.
 
