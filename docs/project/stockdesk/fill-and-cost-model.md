@@ -40,7 +40,9 @@ KRX 왕복(매수+매도) 실제 비용 = 0.015% + 0.015% + 0.20% = **0.23%**(ET
 지정가에만 쓰며, 시장가 체결(종가·시초가)에는 적용하지 않는다.
 
 ## 정수주 / 소수주
-- KRX: 정수주만(`math.floor`). **₩1,000,000 시드에서 1주 가격이 허용 금액(잔고의 20% = 약 20만 원, CB는 30%여도 RISK 상한 20%)을 넘는 고가 종목은 `ZERO`**로 체결되지 않는다. 이 사유는 `orders.reason`에 "one share (…) costs more than the allowed value …"로 남는다.
+- KRX: 정수주만(`math.floor`).
+- **1주 올림(`ONE_SHARE_ROUNDUP=True`, 2026-10-29):** 계획 금액으로 0주가 되면, 1주 가격이 RISK 상한 `min(MAX_POSITION_PCT × 잔고, 여유 현금)`과 유동성 상한 안일 때 **1주를 산다**(`fills.detail`에 "rounded up to 1 share"). 실데이터 백테스트에서 MO(종목당 10% = 10만 원)가 후보 전부를 1주 미달로 못 사던 문제 때문에 넣었다. 끄면 예전처럼 `ZERO`.
+- 그래도 **1주 가격이 잔고의 20%(약 20만 원)를 넘는 종목은 `ZERO`**다(예: 1주 150만 원인 SK하이닉스). 사유는 `orders.reason`에 "one share (…) costs more than the allowed value …"로 남는다.
 - US: `US_FRACTIONAL=True`, `US_QTY_STEP` 0.0001주 단위 내림(토스가 소수 수량 "0.5" 지원). 최소 주문 $5.
 
 ## FX: 1회 환전
