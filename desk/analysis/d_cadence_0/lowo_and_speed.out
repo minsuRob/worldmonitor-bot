@@ -1,0 +1,11 @@
+Lowo candles 11:53:00 -> 13:11:00 77
+Lowo gecko last-close at signal 8.4287e-05 (desk expected 7.281e-05)
+  1 min exit 12:19:39 seen 1.7159e-05 (-79.6%) STOP PnL $-40.56
+  2 min exit 12:20:39 seen 1.1754e-05 (-86.1%) STOP PnL $-43.67
+  5 min exit 12:21:39 seen 1.4336e-05 (-83.0%) STOP PnL $-42.19
+ 10 min exit 12:26:39 seen 9.5340e-06 (-88.7%) STOP PnL $-44.95
+ 15 min exit 12:21:39 seen 1.4336e-05 (-83.0%) STOP PnL $-42.19
+continuous stop minute 12:18:00
+Lowo after signal (5-min samples): [('12:07', '-13%'), ('12:12', '+11%'), ('12:17', '-11%'), ('12:22', '-84%'), ('12:27', '-91%'), ('12:32', '-94%'), ('12:37', '-92%'), ('12:42', '-92%'), ('12:47', '-89%'), ('12:52', '-90%'), ('12:58', '-90%'), ('13:03', '-89%'), ('13:08', '-89%')]
+0: rolling 15-min windows after entry/signal=94; drop >=35% from window open: 42 (45%); high/low range >=35%: 77 (82%)
+Lowo: rolling 15-min windows after entry/signal=49; drop >=35% from window open: 24 (49%); high/low range >=35%: 41 (84%)

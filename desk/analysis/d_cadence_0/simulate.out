@@ -1,0 +1,23 @@
+entry 11:20:03 KST px 0.000222651  stop level 0.000144723  TP3x 0.000667953  liq(for exit model) $31,060
+
+-- anchored at entry (first check = entry + interval) --
+  1 min  exit 11:27:03  seen 1.3896e-04 (-37.6%)  fill 1.3869e-04  STOP   PnL $-20.40  vs stop level -4.0%
+  2 min  exit 11:52:03  seen 1.1980e-04 (-46.2%)  fill 1.1960e-04  STOP   PnL $-24.60  vs stop level -17.2%
+  5 min  exit 11:55:03  seen 1.2889e-04 (-42.1%)  fill 1.2865e-04  STOP   PnL $-22.61  vs stop level -10.9%
+ 10 min  exit 12:00:03  seen 1.3093e-04 (-41.2%)  fill 1.3069e-04  STOP   PnL $-22.16  vs stop level -9.5%
+ 15 min  exit 12:05:03  seen 1.3553e-04 (-39.1%)  fill 1.3527e-04  STOP   PnL $-21.15  vs stop level -6.4%
+cont.    exit 11:26:00-minute  fill≈1.4472e-04 (stop level, candle low crossed)  PnL $-19.13
+
+-- phase sensitivity: every possible check phase (offset 1..interval min after entry) --
+  2 min  PnL min $-24.60  median $-20.40  max $-20.40   exits: 11:27, 11:52
+  5 min  PnL min $-27.47  median $-22.61  max $-20.40   exits: 11:27, 11:53, 11:54, 11:55, 11:56
+ 10 min  PnL min $-27.47  median $-22.22  max $-19.57   exits: 11:27, 11:52, 11:53, 11:54, 11:55, 11:56, 11:58, 12:00, 12:01, 12:39
+ 15 min  PnL min $-27.47  median $-22.56  max $-19.57   exits: 11:27, 11:52, 11:53, 11:54, 11:55, 11:56, 11:58, 12:00, 12:01, 12:02, 12:03, 12:04, 12:05, 12:06, 12:44
+ 20 min  PnL min $-35.11  median $-22.61  max $-19.57   exits: 11:27, 11:52, 11:53, 11:54, 11:55, 11:56, 11:58, 12:00, 12:01, 12:02, 12:03, 12:04, 12:05, 12:06, 12:39, 12:48, 12:49, 12:50, 12:51, 12:57
+ 30 min  PnL min $-34.53  median $-23.76  max $-19.57   exits: 11:27, 11:52, 11:53, 11:54, 11:55, 11:56, 11:58, 12:00, 12:01, 12:02, 12:03, 12:04, 12:05, 12:06, 12:07, 12:39, 12:43, 12:44, 12:45, 12:46, 12:47, 12:48, 12:49, 12:50, 12:51, 12:59, 13:08, 13:10, 13:11
+
+-- actual desk marks (logs/variants.log) --
+  11:20:03  gecko last-close 2.2537e-04 (+1.2%)
+  11:31:04  gecko last-close 2.1402e-04 (-3.9%)
+  11:44:01  gecko last-close 1.8109e-04 (-18.7%)
+  12:06:39  gecko last-close 1.3518e-04 (-39.3%)
