@@ -66,4 +66,4 @@ python3 manual/tests/test_d_entry_filters.py
 python3 manual/tests/test_rules_docs.py    # 규칙 표 = 코드 (어긋나면: python3 manual/gen_rules_doc.py --write)
 python3 manual/tests/test_judge_record.py  # 판단 모델·effort 기록
 ```
-Mac 판단 단계(저장소 루트): `CLAUDE_CLI_MAX_JOBS=40 desk/manual/mac/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` → [ROUTINE](desk/manual/ROUTINE.md)
+Mac 판단 단계(저장소 루트): `CLAUDE_CLI_MODEL=fable CLAUDE_CLI_EFFORT=medium CLAUDE_CLI_MAX_JOBS=40 desk/manual/mac/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` → [ROUTINE](desk/manual/ROUTINE.md)
