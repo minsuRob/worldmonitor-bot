@@ -1,6 +1,7 @@
 """Six paper-trading bots. Usage: python3 bots.py <scan|vet|book|size|fills|risk>
-PAPER ONLY: no wallets, no keys, no order submission anywhere. Only public GET/read RPC."""
-import sys, json, time, traceback
+PAPER ONLY: no wallets, no signing keys, no order submission anywhere. Read-only RPC only
+(Helius read-only API key from env HELIUS_API_KEY, never logged)."""
+import sys, json, time, traceback, sqlite3, threading
 import config as C
 from common import *
 
@@ -14,6 +15,8 @@ def planned_meme_order(c, liq):
     p, b = C.MEME_ASSUMED_P_WIN, C.MEME_ASSUMED_PAYOFF_B
     k_raw = p - (1 - p) / b
     k_cap = max(0.0, min(k_raw, C.KELLY_CAP))
+    fixed = getattr(C, "SIZE_FIXED_FRACTION", None)   # variant books C/D only (manual/book_rules.py); unset for the desk/BASE
+    if fixed: k_cap = fixed
     eq = equity_now(c)
     free = cash(c) - encumbered(c)
     d = k_cap * eq
@@ -27,6 +30,11 @@ def planned_meme_order(c, liq):
 
 # ------------------------------------------------------------------ SCAN
 def scan_once(c, lg):
+    """Legacy single-book SCAN = shared fetch + this ledger's filter (behaviour unchanged)."""
+    return scan_filter(c, lg, scan_fetch(lg))
+
+def scan_fetch(lg):
+    """Raw DexScreener data only (no ledger access): shared by every paper book in a variant cycle."""
     srcs = ["/token-profiles/latest/v1", "/token-boosts/latest/v1", "/token-boosts/top/v1"]
     tokens, errs = [], []
     for s in srcs:
@@ -36,10 +44,15 @@ def scan_once(c, lg):
                 if x.get("chainId") == "solana" and x.get("tokenAddress") not in tokens:
                     tokens.append(x["tokenAddress"])
         else: errs.append(f"{s}: {err}")
+    pairs, perrs = best_pairs(tokens) if tokens else ({}, [])
+    return {"tokens": tokens, "errs": errs, "pairs": pairs, "perrs": perrs}
+
+def scan_filter(c, lg, f):
+    """Per-ledger SCAN filter: this book's own 60-min seen-recently and already-held sets, drops and candidates."""
+    tokens, errs, pairs, perrs = f["tokens"], f["errs"], f["pairs"], f["perrs"]
     kv_set(c, "scan_last", {"ts": now(), "tokens": len(tokens), "errors": errs})
     if not tokens:
         event(c, "scan", "SCAN_NO_DATA", {"errors": errs}); return
-    pairs, perrs = best_pairs(tokens)
     since = now() - C.SCAN_DEDUP_MIN * 60
     recent = {r["token"] for r in c.execute("SELECT token FROM candidates WHERE ts>?", (since,))}
     held = {r["token"] for r in c.execute("SELECT token FROM positions WHERE status='OPEN'")}
@@ -75,41 +88,181 @@ def scan_once(c, lg):
     lg.info(f"scan: tokens={len(tokens)} pairs={len(pairs)} kept={min(len(keep), C.SCAN_MAX)} errors={errs + perrs}")
 
 # ------------------------------------------------------------------ VET
+_THROTTLE = {}
+_THROTTLE_LOCK = threading.Lock()
+def _throttle(bucket, rps):
+    """Simple min-interval throttle per bucket (Helius free plan: 10 rps RPC, 2 rps DAS)."""
+    with _THROTTLE_LOCK:
+        nxt = _THROTTLE.get(bucket, 0.0); t = time.monotonic()
+        if nxt > t: time.sleep(nxt - t); t = nxt
+        _THROTTLE[bucket] = t + 1.0 / rps
+
+def _ep_label(ep):
+    """Endpoint name for logs/sources. Never includes the query string (keys live there)."""
+    if C.HELIUS_RPC and ep == C.HELIUS_RPC: return "helius"
+    return ep.split("?")[0].replace("https://", "")
+
+def _redact(x):
+    x = str(x)
+    return x.replace(C.HELIUS_API_KEY, "***") if C.HELIUS_API_KEY else x
+
+RPC_LAST_SRC = {}
 def rpc(method, params, lg):
-    for i in range(C.RPC_RETRIES):
-        st, j, lat, err = http_json(C.SOLANA_RPC, "POST", {"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-        if st == 200 and j and "result" in j: return j["result"]
-        time.sleep(2 ** (i + 1))
-    lg.info(f"rpc {method} no answer: {err or j}")
+    """Read-only JSON-RPC across C.SOLANA_RPCS with retry/backoff. 429/403/401 or a JSON error
+    moves straight to the next endpoint (those are method blocks, not transient).
+    RPC_LAST_SRC[method] = label of the endpoint that answered."""
+    errs = []
+    for ep in C.SOLANA_RPCS:
+        helius = bool(C.HELIUS_RPC) and ep == C.HELIUS_RPC
+        for i in range(C.RPC_RETRIES):
+            if helius: _throttle("helius", C.HELIUS_RPS)
+            st, j, lat, err = http_json(ep, "POST", {"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+            if st == 200 and j and j.get("result") is not None:
+                RPC_LAST_SRC[method] = _ep_label(ep); return j["result"]
+            code = ((j or {}).get("error") or {}).get("code") if isinstance(j, dict) else None
+            errs.append(f"{_ep_label(ep)}:{_redact(st or err)}:{code}")
+            if st in (401, 403, 404) or code in (-32602, -32603, -32052, 35): break
+            if st == 429 or code == 429:
+                if helius and i == 0: time.sleep(1.0); continue   # own key: one short wait, then fall back
+                break
+            time.sleep(C.RPC_BACKOFF_S * 2 ** i)
+    lg.info(f"rpc {method} no answer: {errs[-6:]}")
     return None
+
+def holder_count_helius(mint, lg):
+    """Helius DAS getTokenAccounts(mint): non-zero token accounts, paged 1000/page, 10 credits/page,
+    capped at HOLDER_COUNT_MAX_PAGES. Returns (count, capped, pages, source) or None."""
+    if not C.HELIUS_RPC: return None
+    day = kst().strftime("%Y-%m-%d")
+    with _snapdb() as s:
+        used = (s.execute("SELECT credits FROM das_credits WHERE day=?", (day,)).fetchone() or [0])[0]
+    if used + 10 * C.HOLDER_COUNT_MAX_PAGES > C.HELIUS_DAS_DAILY_CREDITS:
+        lg.info(f"helius das daily credit budget reached ({used}/{C.HELIUS_DAS_DAILY_CREDITS}); holder count skipped")
+        return None
+    n, page = 0, 1
+    while page <= C.HOLDER_COUNT_MAX_PAGES:
+        res = None
+        with _snapdb() as s:   # 10 credits per DAS request, counted before sending
+            s.execute("INSERT INTO das_credits (day, credits) VALUES (?, 10) ON CONFLICT(day) DO UPDATE SET credits=credits+10", (day,))
+        for i in range(2):
+            if i:
+                with _snapdb() as s:
+                    s.execute("UPDATE das_credits SET credits=credits+10 WHERE day=?", (day,))
+            _throttle("helius-das", C.HELIUS_DAS_RPS)
+            st, j, lat, err = http_json(C.HELIUS_RPC, "POST", {"jsonrpc": "2.0", "id": 1, "method": "getTokenAccounts",
+                                        "params": {"mint": mint, "page": page, "limit": C.HOLDER_COUNT_PAGE}}, timeout=20)
+            if st == 200 and isinstance(j, dict) and isinstance(j.get("result"), dict): res = j["result"]; break
+            lg.info(f"helius das getTokenAccounts {mint} page {page} try {i+1}: {_redact(st or err)}")
+            time.sleep(1.0 * (i + 1))
+        if res is None: return None
+        k = len(res.get("token_accounts") or [])
+        n += k
+        if k < C.HOLDER_COUNT_PAGE: return n, False, page, "helius-das"
+        page += 1
+    return n, True, page - 1, "helius-das"
+
+def _snapdb():
+    s = sqlite3.connect(C.HOLDER_SNAPSHOTS, timeout=30)
+    s.execute("CREATE TABLE IF NOT EXISTS snaps (id INTEGER PRIMARY KEY, token TEXT, ts REAL, holders INTEGER, capped INTEGER, price REAL, src TEXT)")
+    s.execute("CREATE INDEX IF NOT EXISTS snaps_tok ON snaps(token, ts)")
+    s.execute("CREATE TABLE IF NOT EXISTS das_credits (day TEXT PRIMARY KEY, credits INTEGER)")
+    return s
+
+def check_price_vs_holders(cand, lg):
+    """VET check 3. Returns (verdict, detail, holders, src): verdict 'REJECT' | 'OK' | 'PARTIAL'.
+    Needs a Helius DAS holder count now and an earlier snapshot (>=30 min, <=24h) of the same token."""
+    hc = holder_count_helius(cand["token"], lg)
+    if not hc: return "PARTIAL", "3_price_vs_holders: not evaluable (holder count unavailable)", None, None
+    n, capped, pages, src = hc
+    tag = f"{'>=' if capped else ''}{n}"
+    price = cand["price"] or 0.0
+    t = now()
+    with _snapdb() as s:
+        prev = s.execute("SELECT ts, holders, capped, price FROM snaps WHERE token=? AND ts<=? AND ts>=? ORDER BY ts DESC LIMIT 1",
+                         (cand["token"], t - C.VET_HOLDER_SNAPSHOT_MIN_AGE_MIN * 60, t - C.VET_HOLDER_SNAPSHOT_MAX_AGE_H * 3600)).fetchone()
+        if not s.execute("SELECT 1 FROM snaps WHERE token=? AND ts>?", (cand["token"], t - 300)).fetchone():
+            s.execute("INSERT INTO snaps (token, ts, holders, capped, price, src) VALUES (?,?,?,?,?,?)", (cand["token"], t, n, int(capped), price, src))
+    if not prev:
+        return "PARTIAL", f"3_price_vs_holders: holders {tag} ({src}), no earlier snapshot to compare", n, src
+    pts, ph, pcap, pprice = prev
+    if capped or pcap or not ph or not pprice:
+        return "PARTIAL", f"3_price_vs_holders: holders {tag} vs {ph}{' (capped)' if pcap else ''}, cannot compare", n, src
+    dp = (price / pprice - 1) * 100; dh = (n / ph - 1) * 100
+    det = f"price {dp:+.1f}% vs holders {dh:+.1f}% ({ph}->{n}, {src}) over {(t - pts) / 60:.0f}m"
+    if dp >= C.VET_PRICE_UP_PCT and dh < C.VET_HOLDERS_FLAT_PCT: return "REJECT", det, n, src
+    return "OK", det, n, src
+
+_RPC_HOLDERS_BLOCKED_UNTIL = 0.0
+
+def top_holders_rpc(mint, lg):
+    """Returns (total_supply_raw, [(token_account, amount_raw, owner)], source) or None."""
+    global _RPC_HOLDERS_BLOCKED_UNTIL
+    if time.time() < _RPC_HOLDERS_BLOCKED_UNTIL: return None   # every endpoint blocked it recently
+    big = rpc("getTokenLargestAccounts", [mint], lg)
+    if not big:
+        _RPC_HOLDERS_BLOCKED_UNTIL = time.time() + C.RPC_BLOCK_COOLDOWN_S; return None
+    sup = rpc("getTokenSupply", [mint], lg)
+    if not sup: return None
+    accts = big["value"][:5]
+    infos = rpc("getMultipleAccounts", [[a["address"] for a in accts], {"encoding": "jsonParsed"}], lg)
+    if not infos: return None
+    rows = []
+    for a, inf in zip(accts, infos["value"]):
+        owner = (((inf or {}).get("data") or {}).get("parsed") or {}).get("info", {}).get("owner")
+        rows.append((a["address"], float(a["amount"]), owner))
+    return float(sup["value"]["amount"]), rows, set(), RPC_LAST_SRC.get("getTokenLargestAccounts", "solana-rpc")
+
+def top_holders_rugcheck(mint, lg):
+    """Public no-key RugCheck report: topHolders (with owner) + token supply + market (pool) accounts."""
+    for i in range(C.RUGCHECK_RETRIES):
+        st, j, lat, err = http_json(f"{C.RUGCHECK}/tokens/{mint}/report", timeout=20)
+        if st == 200 and isinstance(j, dict) and j.get("topHolders") is not None and (j.get("token") or {}).get("supply"):
+            pools = set()
+            for m in j.get("markets") or []:
+                for k in ("pubkey", "liquidityA", "liquidityB"):
+                    if m.get(k): pools.add(m[k])
+                for k in ("liquidityAAccount", "liquidityBAccount"):
+                    acc = m.get(k) or {}
+                    if isinstance(acc, dict) and acc.get("owner"): pools.add(acc["owner"])
+            rows = [(h.get("address"), float(h.get("amount") or 0), h.get("owner")) for h in j["topHolders"][:5]]
+            return float(j["token"]["supply"]), rows, pools, "rugcheck"
+        lg.info(f"rugcheck {mint} try {i+1}: {st} {err}")
+        time.sleep(C.RPC_BACKOFF_S * 2 ** (i + 1))
+    return None
+
+def check_top_holder(cand, lg):
+    """VET check 1. Returns (ok: bool|None, detail). None = no data source answered."""
+    res = top_holders_rpc(cand["token"], lg) or top_holders_rugcheck(cand["token"], lg)
+    if not res: return None, "Solana RPC and RugCheck did not answer"
+    total, rows, pools, src = res
+    pools = set(pools) | {cand["pair"]}
+    top, excluded = 0.0, []
+    for addr, amt, owner in rows:
+        if (owner and owner in pools) or addr in pools:
+            excluded.append(addr); continue   # a DEX pool's own vault, not a wallet
+        top = max(top, amt / total if total else 1.0)
+    det = f"largest holder {top*100:.2f}% (src {src}, pool vaults excluded: {len(excluded)})"
+    return top <= C.VET_TOP_HOLDER_MAX, det
 
 def vet_one(c, cand, lg):
     """7 checks in order; stop at first REJECT. Returns (result, check, detail)."""
     partial = []
     p = json.loads(cand["data"])
     # 1 top holder
-    sup = rpc("getTokenSupply", [cand["token"]], lg)
-    big = rpc("getTokenLargestAccounts", [cand["token"]], lg)
-    if not sup or not big: return "REJECT", "1_top_holder", "Solana RPC did not answer"
-    total = float(sup["value"]["amount"])
-    accts = big["value"][:5]
-    infos = rpc("getMultipleAccounts", [[a["address"] for a in accts], {"encoding": "jsonParsed"}], lg)
-    if not infos: return "REJECT", "1_top_holder", "Solana RPC did not answer (owners)"
-    top, excluded = 0.0, []
-    for a, inf in zip(accts, infos["value"]):
-        owner = (((inf or {}).get("data") or {}).get("parsed") or {}).get("info", {}).get("owner")
-        if owner and owner == cand["pair"]:
-            excluded.append(a["address"]); continue   # the DEX pool's own vault, not a wallet
-        top = max(top, float(a["amount"]) / total if total else 1.0)
-    if top > C.VET_TOP_HOLDER_MAX:
-        return "REJECT", "1_top_holder", f"largest holder {top*100:.2f}% > 5% (pool vaults excluded: {len(excluded)})"
+    ok, det = check_top_holder(cand, lg)
+    if ok is None: return "REJECT", "1_top_holder", det
+    if not ok: return "REJECT", "1_top_holder", det.replace("largest holder", "largest holder >5%:", 1)
     # 2 liquidity vs order
     liq = cand["liquidity"]
     order, *_ = planned_meme_order(c, liq)
     if liq < C.VET_MIN_LIQ or (order > 0 and liq < C.VET_LIQ_MULT * order):
         return "REJECT", "2_liquidity", f"liquidity {liq:.0f} vs order {order:.2f}"
-    # 3 price up while holders flat
-    partial.append("3_price_vs_holders: not evaluable (holders unknown)")
+    # 3 price up while holders flat (Helius DAS holder count vs this token's earlier snapshot)
+    v3, d3, nh, hsrc = check_price_vs_holders(cand, lg)
+    if nh is not None and "id" in cand.keys():
+        c.execute("UPDATE candidates SET holders=?, holders_source=? WHERE id=?", (nh, hsrc, cand["id"]))
+    if v3 == "REJECT": return "REJECT", "3_price_vs_holders", d3
+    if v3 == "PARTIAL": partial.append(d3)
     # 4 already priced into h1
     h1 = ((p.get("priceChange") or {}).get("h1")) or 0
     if h1 >= C.VET_H1_ALREADY_PRICED:
@@ -155,7 +308,11 @@ def book_once(c, lg):
         if st != 200 or not fcs or (f or {}).get("degraded"):
             event(c, "book", "BOOK_NO_MODEL_PROB", f"no WM forecasts (http {st}, {err}); no own probability -> no bets"); continue
         open_n = c.execute("SELECT COUNT(*) n FROM bets WHERE status IN ('REQUESTED','SIZED','OPEN')").fetchone()["n"]
-        for fc in fcs:
+        calibrated = [fc for fc in fcs if (fc.get("calibration") or {}).get("marketTitle")
+                      and (fc.get("calibration") or {}).get("internalProbability") is not None]
+        if not calibrated:
+            event(c, "book", "BOOK_NO_CALIBRATED", f"{len(fcs)} WM forecasts, 0 with calibration.marketTitle+internalProbability -> no pairable market"); continue
+        for fc in calibrated:
             cal = fc.get("calibration") or {}
             title = cal.get("marketTitle"); p = cal.get("internalProbability")
             upd = (fc.get("updatedAt") or 0) / 1000
@@ -179,10 +336,15 @@ def book_once(c, lg):
 # ------------------------------------------------------------------ SIZE
 def size_tick(c, lg):
     # memecoins: only VET-passed candidates
+    max_open = getattr(C, "MAX_OPEN_POSITIONS", None)   # variant books C/D only; unset = cash-limited as before
     for cand in c.execute("SELECT * FROM candidates WHERE status='VETTED' AND vet_result IN ('PASS','PASS_PARTIAL')").fetchall():
         d, kr, kc, why = planned_meme_order(c, cand["liquidity"])
         status, reason = "SIZED", why
-        if d < C.MIN_ORDER: status, reason = "ZERO", f"size {d:.2f} < min order {C.MIN_ORDER} ({why or 'kelly cap'})"; d = 0
+        n_open = c.execute("SELECT COUNT(*) n FROM positions WHERE status='OPEN' AND kind='meme'").fetchone()["n"] + \
+                 c.execute("SELECT COUNT(*) n FROM orders WHERE status='SIZED' AND kind='meme_entry'").fetchone()["n"]
+        if max_open and n_open >= max_open:
+            status, reason = "ZERO", f"max open positions {max_open} reached"; d = 0
+        elif d < C.MIN_ORDER: status, reason = "ZERO", f"size {d:.2f} < min order {C.MIN_ORDER} ({why or 'kelly cap'})"; d = 0
         elif fee_for(d) / d > C.FEE_FLOOR_MAX_EFFECTIVE: status, reason = "ZERO", "fee would exceed 2% of order"; d = 0
         c.execute("""INSERT INTO orders (ts,kind,candidate_id,token,symbol,pair,side,kelly_raw,kelly_capped,dollars,expected_price,status,reason)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (now(), "meme_entry", cand["id"], cand["token"], cand["symbol"], cand["pair"],

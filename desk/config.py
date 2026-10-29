@@ -20,7 +20,40 @@ WM_CHECKS = {
     "cross_source_signals": "/api/intelligence/v1/list-cross-source-signals",
 }
 DEX = "https://api.dexscreener.com"
-SOLANA_RPC = "https://api.mainnet-beta.solana.com"
+SOLANA_RPC = "https://api.mainnet-beta.solana.com"   # kept for reference
+
+def _load_env_file(path):
+    """KEY=VALUE lines into os.environ (existing env wins). Desk .env is gitignored, mode 600."""
+    try:
+        for line in open(path):
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line: continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+_load_env_file(os.path.join(BASE, ".env"))
+HELIUS_KEY_FILE = "/workspace/secrets/helius_api_key.txt"
+if not os.environ.get("HELIUS_API_KEY"):
+    try: os.environ["HELIUS_API_KEY"] = open(HELIUS_KEY_FILE).read().strip()
+    except OSError: pass
+HELIUS_API_KEY = os.environ.get("HELIUS_API_KEY", "").strip()   # read-only RPC key. NEVER log/print it.
+HELIUS_RPC = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}" if HELIUS_API_KEY else None
+# Read-only RPC list, tried in order: optional SOLANA_RPC_URL, then Helius (keyed, free plan), then public RPCs.
+# RugCheck stays the last fallback for top holders. Never a wallet, never a send.
+SOLANA_RPCS = ([os.environ["SOLANA_RPC_URL"]] if os.environ.get("SOLANA_RPC_URL") else []) + \
+    ([HELIUS_RPC] if HELIUS_RPC else []) + [
+    "https://api.mainnet-beta.solana.com",
+    "https://api.mainnet.solana.com",
+    "https://solana.leorpc.com/?api_key=FREE",
+]
+HELIUS_RPS = 8.0                 # free plan: 10 req/s standard RPC; stay under it
+HELIUS_DAS_RPS = 2.0             # free plan DAS (getTokenAccounts) limit is lower: 2 req/s
+HOLDER_COUNT_PAGE = 1000         # DAS getTokenAccounts page size (10 credits per page)
+HOLDER_COUNT_MAX_PAGES = 5       # cap: <=50 credits per token; more -> count is a lower bound ("capped")
+HELIUS_DAS_DAILY_CREDITS = 20_000   # DAS budget/day (~600k/month of the 1M free); over it -> holder count skipped
+# No-key fallback for top holders when every RPC blocks getTokenLargestAccounts (public mainnet does: 429).
+RUGCHECK = "https://api.rugcheck.xyz/v1"
 GAMMA = "https://gamma-api.polymarket.com"
 KALSHI = "https://external-api.kalshi.com/trade-api/v2"
 
@@ -36,12 +69,21 @@ VET_LIQ_MULT = 50.0
 VET_H1_ALREADY_PRICED = 25.0     # % priceChange.h1 above which the signal is "already priced"
 VET_MIN_AGE_MIN = 30
 VET_MIN_REJECTS_PER_DAY = 10
-RPC_RETRIES = 3
+RPC_RETRIES = 3                  # per endpoint, exponential backoff 1s,2s,4s (429 -> next endpoint)
+RPC_BACKOFF_S = 1.0
+RUGCHECK_RETRIES = 3
+RPC_BLOCK_COOLDOWN_S = 600        # skip RPC holder lookup 10 min after all endpoints refused it
+# check 3 "price up while holders flat": compare with this token's earlier holder snapshot (Helius DAS count)
+HOLDER_SNAPSHOTS = os.path.join(STATE, "holder_snapshots.db")
+VET_HOLDER_SNAPSHOT_MIN_AGE_MIN = 30   # earlier snapshot must be at least this old
+VET_HOLDER_SNAPSHOT_MAX_AGE_H = 24
+VET_PRICE_UP_PCT = 5.0          # price up >= 5% since that snapshot ...
+VET_HOLDERS_FLAT_PCT = 1.0      # ... while holder count grew < 1% -> REJECT 3_price_vs_holders
 # ---- SIZE  (Kelly inputs below are ASSUMPTIONS, not estimates)
 KELLY_CAP = 0.06                 # 6% of account, a ceiling not a target
 MEME_ASSUMED_P_WIN = 0.45
 MEME_ASSUMED_PAYOFF_B = 1.5
-MIN_ORDER = 50.0
+MIN_ORDER = 30.0
 SLIPPAGE_BUDGET = 0.02
 ADD_TRIGGER_GAIN = 0.50          # one add only after confirmed +50% ...
 ADD_PULLBACK = 0.10              # ... and a >=10% pullback from the peak (still above entry)
@@ -69,3 +111,6 @@ DEATHS_PER_HOUR_HALT = 2
 CLOSE_REPORT_HOUR = 23           # KST
 ALERT_MOVE = 0.10
 BOTS = ["scan", "vet", "book", "size", "fills", "risk"]
+# ---- per-book variant knobs (unset for the desk; set only inside manual/run_variants.rules(v) for books C/D)
+SIZE_FIXED_FRACTION = None       # fixed fraction of equity instead of the capped assumed-Kelly
+MAX_OPEN_POSITIONS = None        # cap on concurrent meme positions + pending entries
