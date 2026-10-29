@@ -20,11 +20,12 @@ World Monitor Redis ──► regime_context(매크로 블록, 참고용) ──
 | Mac (사용자 `minsu`) | Claude CLI(구독 로그인)로 판단 작업 실행, 이 git 저장소 | `/Users/minsu/workspace/Personal/worldmonitor-bot` |
 
 - 박스의 `/workspace/desk`와 이 저장소의 `desk/`는 같은 코드다(git 이력은 따로). 이 저장소가 GitHub(`minsuRob/worldmonitor-bot`)에 올라가는 쪽이다.
-- 판단 작업 파일은 박스 `/workspace/worldmonitor/data/claude-cli/<runId>/jobs.jsonl`에 생기고, Mac `claude-cli-runs/<runId>/`로 복사돼 실행된 뒤 `results.jsonl`이 다시 박스로 돌아온다. 복사는 Grok Bot 루틴이 하며 이 저장소 코드에는 없다.
+- 판단 작업 파일은 박스 `/workspace/worldmonitor/data/claude-cli/<runId>/jobs.jsonl`에 생기고, Mac `claude-cli-runs/<runId>/`로 복사돼 실행된 뒤 `results.jsonl`이 다시 박스로 돌아온다. 복사는 Grok Bot 루틴이 하며, 루틴이 따를 기준 정의는 [`desk/manual/ROUTINE.md`](../../desk/manual/ROUTINE.md)다(복사 방법 자체는 아직 기존 루틴과 대조하지 않았다).
 - `finish`는 박스 World Monitor의 `scripts/claude-cli/import-results.mjs`로 결과를 가져온다(`stored.jsonl` 생성).
 
 ## Claude CLI 러너 (Mac)
-- 파일: Mac의 `tools/claude_cli_runner.sh` (git 제외, `.gitignore`의 `tools/`). 정본은 World Monitor 쪽 `tools/claude-cli/claude_cli_runner.sh`.
+- 파일: `desk/manual/mac/claude_cli_runner.sh` (git 추적, 2026-10-29부터 정본). 예전 사본인 Mac `tools/claude_cli_runner.sh`와 World Monitor 쪽 `tools/claude-cli/claude_cli_runner.sh`는 추적되지 않으며, 루틴이 새 경로로 바뀌면 지운다.
+- 기록: 작업마다 `claudeModel`(CLI가 보고한 실제 모델), `requestedModel`/`requestedEffort`(env 값, 없으면 `null`). `results.meta.json`에도 요청값. 모델·노력 수준은 고정하지 않는다.
 - 비용 안전장치: `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`을 지워서 **구독 로그인만** 쓴다. `ANTHROPIC_BASE_URL`은 anthropic.com일 때만 유지. MCP 서버 없음, 도구 없음.
 - 환경 변수: `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_EFFORT`, `CLAUDE_CLI_MAX_JOBS`(기본 20, 데스크는 40으로 맞춰 씀), `CLAUDE_CLI_TIMEOUT`(기본 300초).
 - 출력: `results.jsonl`, `results.meta.json` (작업 파일과 같은 폴더).

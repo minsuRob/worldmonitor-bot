@@ -1,8 +1,8 @@
 # 운영 런북: 15분 사이클
 
-[← 인덱스](../../CLAUDE.md) · 코드: `desk/manual/variants.sh`, `desk/manual/run_variants.py`, Mac `tools/claude_cli_runner.sh`
+[← 인덱스](../../CLAUDE.md) · 코드: `desk/manual/variants.sh`, `desk/manual/run_variants.py`, Mac `desk/manual/mac/claude_cli_runner.sh`
 
-15분마다 Grok Bot 루틴이 아래 순서를 한 번 돈다. 루틴 정의(복사·알림 로직 포함)는 이 저장소에 없다.
+15분마다 Grok Bot 루틴이 아래 순서를 한 번 돈다. **루틴의 기준 정의(복사, 실패 처리, 알림, Grok Bot 프롬프트)는 [`desk/manual/ROUTINE.md`](../../desk/manual/ROUTINE.md)다.** 이 문서는 손으로 돌릴 때의 요약이다.
 
 ## 단계
 | # | 어디서 | 명령 | 결과 |
@@ -10,7 +10,7 @@
 | 1 | 박스 `/workspace/desk` | `manual/variants.sh prepare` | JSON 한 줄: `runId`, `jobs`, `jobsFile`, 장부별 후보·통과 수. 사이클 기록 `manual/variant_cycles/<runId>.json` |
 | 2 | (jobs = 0이면 3·4 건너뛰고 5로) | | |
 | 3 | 박스 → Mac | `jobs.jsonl`을 Mac `claude-cli-runs/<runId>/jobs.jsonl`로 복사 | 박스 원본: `/workspace/worldmonitor/data/claude-cli/<runId>/jobs.jsonl` |
-| 4 | Mac 저장소 루트 | `CLAUDE_CLI_MAX_JOBS=40 tools/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` (모델·노력 수준은 `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_EFFORT`로 지정. 루틴이 쓰는 값은 저장소에 기록돼 있지 않음) | 같은 폴더에 `results.jsonl`, `results.meta.json`. 박스 run 폴더로 다시 복사 |
+| 4 | Mac 저장소 루트 | `CLAUDE_CLI_MAX_JOBS=40 desk/manual/mac/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` (모델·노력 수준은 고정하지 않음. `CLAUDE_CLI_MODEL`/`CLAUDE_CLI_EFFORT` 요청값과 CLI가 보고한 실제 모델이 작업마다 기록되고, `finish`가 장부 DB `vjudge.model`/`effort`에 넣는다) | 같은 폴더에 `results.jsonl`, `results.meta.json`. 박스 run 폴더로 다시 복사 |
 | 5 | 박스 | `manual/variants.sh finish <runId>` (jobs = 0이거나 Mac 불가면 `--no-judge`) | 결과 가져오기 → 장부별 매수 규칙 → SIZE → FILLS → RISK → 장부별 매도. 기록 `manual/variant_cycles/<runId>.result.json` |
 | 6 | 박스 | `manual/variants.sh report` | 5개 장부 비교표 (모든 숫자는 장부 DB에서) |
 
@@ -24,7 +24,7 @@
 
 ## Mac을 쓸 수 없을 때
 - Mac이 잠들었거나 연결이 끊겨 러너를 못 돌리면 `finish <runId> --no-judge`로 마친다. **아무것도 사지 않고**, RISK와 장부별 매도는 정상으로 돈다(`NO_JUDGE`).
-- 끊김 알림을 언제 보내는지는 루틴 쪽 동작이며 저장소 코드에는 없다.
+- 알림을 보내는 조건은 [`ROUTINE.md`](../../desk/manual/ROUTINE.md#알림)에 있다. 알림 채널·문구는 아직 기존 루틴과 대조하지 않았다.
 - 사용자 쪽 조치: Mac을 깨우고 Grok Bot 데스크톱 앱을 연다.
 - 러너 결과 확인: `results.meta.json`의 `ok`/`failed`, `anthropicApiKeyUnset`, `authStatus`(구독 로그인인지).
 

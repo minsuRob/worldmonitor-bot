@@ -13,6 +13,8 @@ Solana 밈코인 **모의(페이퍼) 매매 데스크**(`desk/`)와 그 옆에�
 5. **커밋 금지:** `.env*`, API 키, `state/`(`*.db`), `logs/`, `manual/variant_cycles/`, `claude-cli-runs/`, `data/`.
 6. 커밋 메시지는 **한글, 분류별**. 강제 푸시는 사용자 승인 없이 하지 않는다. → [conventions](docs/project/conventions.md)
 
+> **15분 루틴을 돌리는 에이전트(Grok Bot 포함)는 [`desk/manual/ROUTINE.md`](desk/manual/ROUTINE.md)를 따른다.** 루틴을 바꾸려면 그 파일을 먼저 고치고 `routine-version`을 올린다.
+
 ## 디렉터리 지도
 ```
 desk/                     데스크 코드 (Python 3, 표준 라이브러리만)
@@ -25,12 +27,15 @@ desk/                     데스크 코드 (Python 3, 표준 라이브러리만)
     variants.sh           진입점: prepare | finish <runId> [--no-judge] | report
     run_variants.py       장부별 SCAN 필터·VET·판단 작업·SIZE·FILLS·RISK
     book_rules.py         장부별 규칙 (오버라이드, 사전 검사, 매수 규칙, 매도)
+    gen_rules_doc.py      장부별 규칙 표를 코드에서 생성 (--write / --check)
     regime_context.py     판단 프롬프트에 넣는 매크로 블록 (WM Redis)
+    ROUTINE.md            15분 루틴 기준 정의 (Grok Bot이 따름)
+    mac/claude_cli_runner.sh   Mac 판단 러너 (구독 로그인만, 요청·실제 모델 기록)
     tests/                테스트·드라이런 스크립트
   analysis/               일회성 분석 자료 (예: d_cadence_0)
 worldmonitor-selfhost/    World Monitor 셀프호스팅 스크립트 00~08 + setup.md
 docs/                     리서치·가이드 요약·과거 상태 + project/(이 인덱스의 주제 문서)
-tools/                    (git 제외) Mac의 claude_cli_runner.sh
+tools/                    (git 제외) 예전 러너 사본. 루틴이 desk/manual/mac/ 경로로 바뀌면 지운다
 claude-cli-runs/, data/   (git 제외) Mac에서 돈 Claude 판단 결과
 ```
 
@@ -40,7 +45,8 @@ claude-cli-runs/, data/   (git 제외) Mac에서 돈 Claude 판단 결과
 | [architecture.md](docs/project/architecture.md) | 전체 흐름, 박스와 Mac 역할, 데이터 출처를 알고 싶을 때 |
 | [desk-bots.md](docs/project/desk-bots.md) | 6개 봇 파이프라인, VET 7개 검사, CHIEF 감독·중단 규칙을 볼 때 |
 | [paper-books.md](docs/project/paper-books.md) | BASE·A·B·C·D 장부 규칙(VET, 크기, 매수, 매도)을 고치거나 설명할 때 |
-| [runbook.md](docs/project/runbook.md) | 15분 사이클을 돌리거나, 잠금·Mac 연결 끊김·로그를 다룰 때 |
+| [ROUTINE.md](desk/manual/ROUTINE.md) | 15분 루틴의 기준 정의(단계, 복사, 실패 처리, 알림, Grok Bot 프롬프트)를 볼 때 |
+| [runbook.md](docs/project/runbook.md) | 15분 사이클을 손으로 돌리거나, 잠금·Mac 연결 끊김·로그를 다룰 때 |
 | [config-and-secrets.md](docs/project/config-and-secrets.md) | 환경 변수·키 이름, 비밀 저장 위치, git 제외 경로를 확인할 때 |
 | [worldmonitor.md](docs/project/worldmonitor.md) | World Monitor 셀프호스팅·READY 체크·알려진 문제를 볼 때 |
 | [testing.md](docs/project/testing.md) | 테스트를 돌리거나 새 테스트를 추가할 때 |
@@ -57,5 +63,7 @@ manual/variants.sh finish <runId> --no-judge   # Mac 불가 시: 매수 없음, 
 manual/variants.sh report [--json]         # 5개 장부 비교 (장부 DB에서 읽음)
 python3 manual/tests/test_books_v2.py      # 장부 규칙 테스트
 python3 manual/tests/test_d_entry_filters.py
+python3 manual/tests/test_rules_docs.py    # 규칙 표 = 코드 (어긋나면: python3 manual/gen_rules_doc.py --write)
+python3 manual/tests/test_judge_record.py  # 판단 모델·effort 기록
 ```
-Mac 판단 단계(저장소 루트): `CLAUDE_CLI_MAX_JOBS=40 tools/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` → [runbook](docs/project/runbook.md)
+Mac 판단 단계(저장소 루트): `CLAUDE_CLI_MAX_JOBS=40 desk/manual/mac/claude_cli_runner.sh claude-cli-runs/<runId>/jobs.jsonl` → [ROUTINE](desk/manual/ROUTINE.md)

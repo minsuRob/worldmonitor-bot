@@ -1,4 +1,5 @@
 # Paper-only trading desk (NOT started)
+The 15-minute book routine (Grok Bot or any agent) follows manual/ROUTINE.md; change that file first, then the routine.
 Paper trading only. No wallets, keys, exchange logins, or real orders. Public read-only data only.
 Start later:  WM_PORT=3000 ./start.sh   (CHIEF launches scan/vet/book/size/fills/risk)
 Stop:         ./stop.sh                 (never closes positions)

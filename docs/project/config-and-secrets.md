@@ -20,7 +20,8 @@
 | `WM_PORT` | 셀프호스팅 World Monitor 포트 (기본 3000) | 3000 |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | 매크로 블록용 WM Redis (없으면 `.env.local`에서 읽음) | 매크로 블록이 `unavailable` |
 | `CLAUDE_CLI_MAX_JOBS` | 사이클당 판단 작업 상한 (기본 40) | 40 |
-| Mac 러너: `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_EFFORT`, `CLAUDE_CLI_TIMEOUT` | 모델·노력 수준·작업당 시간 제한 | CLI 기본값 / 300초 |
+| Mac 러너: `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_EFFORT`, `CLAUDE_CLI_TIMEOUT` | 모델·노력 수준·작업당 시간 제한 (모델·노력 수준은 요청값으로 기록됨) | CLI 기본값(기록은 `null`) / 300초 |
+| `DESK_ROUTINE_VERSION` | 루틴이 따른 `ROUTINE.md` 버전. 사이클 기록에 `routine_version`으로 남음 | `null` |
 
 ## Secret Manager에 있는 이름 (2026-10-29 `gcloud secrets list`)
 `ACLED_EMAIL`, `ACLED_PASSWORD`, `AISSTREAM_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `COMTRADE_API_KEYS`, `EIA_API_KEY`, `FINNHUB_API_KEY`, `FRED_API_KEY`, `GIE_API_KEY`, `HELIUS_API_KEY`, `IMF_API_KEY`, `NASA_FIRMS_API_KEY`, `OPENAQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`, `OTX_API_KEY`, `SAM_GOV_API_KEY`, `SIGNUP_PASSWORD`, `USDA_FAS_API_KEY`, `USDA_FAS_PSD_API_KEY`, `WAQI_API_KEY`, `WTO_API_KEY`
@@ -34,5 +35,5 @@
 루트 `.gitignore`: `state/`, `logs/`, `__pycache__/`, `*.db`, `*.db-*`, `.env*`, `worldmonitor/`, `tools/`, `.claude-cli-runs/`, `claude-cli-runs/`, `data/`
 `desk/.gitignore`: `state/`, `logs/`, `__pycache__/`, `manual/variant_cycles/`, `.env`, `*.key`
 
-- `tools/`가 제외돼 있어서 Mac의 `tools/claude_cli_runner.sh`는 **추적되지 않는다**.
+- `tools/`가 제외돼 있어서 예전 러너 사본 `tools/claude_cli_runner.sh`는 추적되지 않는다. 정본은 추적되는 `desk/manual/mac/claude_cli_runner.sh`다.
 - 커밋 전에 스테이징된 diff에서 키처럼 보이는 문자열을 검사한다. → [conventions.md](conventions.md)
