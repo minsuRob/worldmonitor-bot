@@ -28,6 +28,9 @@ def stats(v):
            "cash_usd": round(acct["cash"], 2), "equity_usd": round(acct["cash"] + mv, 2),
            "win_rate": (round(wins / len(closed), 3) if closed else None), "max_drawdown_pct": round(mdd * 100, 2),
            "first_cycle": kst_str(cyc["a"]) if cyc["a"] else None}
+    # judged decisions per judge model/effort (NULL = recorded before 2026-10-29 or not reported -> "unknown")
+    out["judge_models"] = {f"{r['m'] or 'unknown'}/{r['e'] or 'unknown'}": r["n"] for r in c.execute(
+        "SELECT model m, effort e, COUNT(*) n FROM vjudge WHERE job_id IS NOT NULL GROUP BY model, effort ORDER BY n DESC")}
     if v == "BASE":
         out["legacy_manual_cycles_before_runner"] = len(glob.glob(os.path.join(HERE, "meme-cli-*.scanvet.json")))
     return out
@@ -43,6 +46,9 @@ if __name__ == "__main__":
                 f"{r['realized_pnl_usd']:.2f}", f"{r['unrealized_pnl_usd']:.2f}", f"{r['equity_usd']:.2f}",
                 "-" if r["win_rate"] is None else f"{r['win_rate']*100:.0f}%", f"{r['max_drawdown_pct']:.2f}"]
         print("  ".join(f"{str(x):>9}" for x in vals))
+    print("judge model/effort (judged decisions):")
+    for r in rows:
+        print(f"  {r['variant']:>4}: " + (", ".join(f"{k} {n}" for k, n in r["judge_models"].items()) or "-"))
     b = rows[0]
     print(f"BASE also had {b['legacy_manual_cycles_before_runner']} manual cycles before the variant runner (all SKIP, no fills).")
     print("A=EV rule (p*b-(1-p)-3%>0)  B=top holder 8% (old C)  C=aggressive momentum rider  D=aggressive early sniper (Claude veto)  | shared RISK identical; C/D add own exits")

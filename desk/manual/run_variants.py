@@ -52,6 +52,8 @@ EXTRA = """CREATE TABLE IF NOT EXISTS vcycles (id INTEGER PRIMARY KEY, run_id TE
   scanned INTEGER, passed INTEGER, buys INTEGER, fills INTEGER, closes INTEGER, judged INTEGER, note TEXT);
 CREATE TABLE IF NOT EXISTS vjudge (id INTEGER PRIMARY KEY, run_id TEXT, candidate_id INTEGER, token TEXT, symbol TEXT, job_id TEXT,
   claude_decision TEXT, confidence REAL, p_win REAL, payoff_ratio REAL, ev REAL, variant_decision TEXT, rule TEXT, rationale TEXT, ts REAL);"""
+VJUDGE_ADDED = ("model", "effort")   # judge model the CLI reported / effort the runner requested (2026-10-29)
+ROUTINE_VERSION = os.environ.get("DESK_ROUTINE_VERSION")   # set by the 15-minute routine (manual/ROUTINE.md); None = not set
 
 def vdb(v):
     if v == "BASE":
@@ -64,8 +66,21 @@ def vdb(v):
         if not c.execute("SELECT 1 FROM account").fetchone():
             c.execute("INSERT INTO account VALUES (1,?,?,?)", (C.START_BALANCE, C.START_BALANCE, now()))
     c.executescript(EXTRA)
+    have = {r[1] for r in c.execute("PRAGMA table_info(vjudge)")}
+    for col in VJUDGE_ADDED:   # columns added after the table existed; older rows stay NULL (unknown)
+        if col not in have: c.execute(f"ALTER TABLE vjudge ADD COLUMN {col} TEXT")
     if v != "BASE": c.executescript(BR.EXTRA_SQL)   # partial take-profit state (C/D exits); not added to desk.db
     return c
+
+def runner_requested(rundir):
+    """job id -> (requestedModel, requestedEffort) from the Mac runner's results.jsonl (runner /2+; older lines -> None)."""
+    out, p = {}, os.path.join(rundir, "results.jsonl")
+    if not os.path.exists(p): return out
+    for line in open(p):
+        if not line.strip(): continue
+        rec = json.loads(line)
+        out[rec.get("id")] = (rec.get("requestedModel"), rec.get("requestedEffort"))
+    return out
 
 @contextlib.contextmanager
 def rules(v):
@@ -187,7 +202,7 @@ def prepare():
     lg = logger("variants")
     fetched = bots.scan_fetch(lg)           # ONE shared DexScreener fetch (raw data only)
     t_scan = time.time()
-    out = {"run_id": run_id, "mode": "independent-books", "scan_ts": t0, "scan_kst": kst_str(t0),
+    out = {"run_id": run_id, "mode": "independent-books", "routine_version": ROUTINE_VERSION, "scan_ts": t0, "scan_kst": kst_str(t0),
            "scan_last": {"ts": t_scan, "tokens": len(fetched["tokens"]), "pairs": len(fetched["pairs"]), "errors": fetched["errs"] + fetched["perrs"]},
            "books": {}, "candidates": [], "variants": {}}
     seen_tok = set(); per_book = {}
@@ -304,20 +319,25 @@ def finish(run_id, no_judge=False):
         r = subprocess.run(["node", "scripts/claude-cli/import-results.mjs", "--run-id", run_id], cwd=WM, capture_output=True, text=True)
         judge_note = (r.stdout + r.stderr).strip().splitlines()[-1] if (r.stdout + r.stderr).strip() else f"import rc={r.returncode}"
         if r.returncode != 0: sys.exit(f"import failed: {r.stdout}{r.stderr}")
+        req = runner_requested(rundir)   # read directly: import-results.mjs may not carry the runner's newer fields
         for line in open(os.path.join(rundir, "stored.jsonl")):
             if not line.strip(): continue
             rec = json.loads(line); pj = rec.get("parsedJson") if rec.get("ok") else None
             job = next(j for j in cyc["jobs"] if j["id"] == rec["jobId"])
+            rq_model, rq_effort = req.get(rec["jobId"], (None, None))
             decisions[(job.get("book"), job["token"])] = {"job_id": rec["jobId"], "ok": rec.get("ok"), "json": pj, "durationMs": rec.get("durationMs"),
-                                       "model": rec.get("claudeModel"), "apiKeySource": rec.get("apiKeySource")}
+                                       "model": rec.get("claudeModel"), "requested_model": rq_model, "effort": rq_effort,
+                                       "apiKeySource": rec.get("apiKeySource")}
     elif no_judge: judge_note = "NO_JUDGE: Mac step skipped; nothing bought this cycle"
-    summary = {"run_id": run_id, "scan_kst": cyc["scan_kst"], "judge": judge_note, "claude": {}, "variants": {}}
+    summary = {"run_id": run_id, "scan_kst": cyc["scan_kst"], "judge": judge_note,
+               "routine_version": {"prepare": cyc.get("routine_version"), "finish": ROUTINE_VERSION}, "claude": {}, "variants": {}}
     for (bk, tok), d in decisions.items():
         j = d["json"] or {}
         summary["claude"].setdefault(bk, {})[tok] = {"symbol": next(c_["symbol"] for c_ in cyc["candidates"] if c_["token"] == tok), "job_id": d["job_id"],
                                   "decision": j.get("decision"), "confidence": j.get("confidence"), "p_win": j.get("p_win"),
                                   "payoff_ratio": j.get("payoff_ratio"), "rationale": j.get("rationale"), "ms": d["durationMs"],
-                                  "model": d["model"], "apiKeySource": d["apiKeySource"], "parse_ok": bool(d["json"])}
+                                  "model": d["model"], "requested_model": d["requested_model"], "effort": d["effort"],
+                                  "apiKeySource": d["apiKeySource"], "parse_ok": bool(d["json"])}
     t_imp = time.time()
     clear_cache()   # fresh marks for this FILLS/RISK pass, shared by all books
     for v in VARIANTS:
@@ -334,10 +354,10 @@ def finish(run_id, no_judge=False):
                     dec, rule, ev = "SKIP", why, None
                 else:
                     dec, rule, ev = BR.decide(v, j)   # BASE/B: Claude word; A/C: EV>0; D: numeric signal unless Claude vetoes
-                c.execute("""INSERT INTO vjudge (run_id,candidate_id,token,symbol,job_id,claude_decision,confidence,p_win,payoff_ratio,ev,variant_decision,rule,rationale,ts)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (run_id, r_["vid"], r_["token"], r_["symbol"], (d or {}).get("job_id"),
+                c.execute("""INSERT INTO vjudge (run_id,candidate_id,token,symbol,job_id,claude_decision,confidence,p_win,payoff_ratio,ev,variant_decision,rule,rationale,ts,model,effort)
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (run_id, r_["vid"], r_["token"], r_["symbol"], (d or {}).get("job_id"),
                              (j or {}).get("decision"), (j or {}).get("confidence"), (j or {}).get("p_win"), (j or {}).get("payoff_ratio"), ev, dec, rule,
-                             (j or {}).get("rationale"), now()))
+                             (j or {}).get("rationale"), now(), (d or {}).get("model"), (d or {}).get("effort")))
                 c.execute("UPDATE candidates SET status=? WHERE id=?", ("VETTED" if dec == "BUY" else "CLAUDE_SKIP", r_["vid"]))
                 vs["decisions"].append({"symbol": r_["symbol"], "token": r_["token"], "decision": dec, "rule": rule, "ev": ev,
                                         "claude": (j or {}).get("decision"), "confidence": (j or {}).get("confidence"),
@@ -383,7 +403,7 @@ def print_brief(summary):
     print(f"{summary['run_id']} scan {summary['scan_kst']} | {summary['judge']}")
     for bk, toks in summary["claude"].items():
       for tok, j in toks.items():
-        print(f"  claude {bk} {j['symbol']} {tok}: {j['decision']} conf={j['confidence']} p_win={j['p_win']} b={j['payoff_ratio']} {j['ms']}ms {j['model']} key={j['apiKeySource']}")
+        print(f"  claude {bk} {j['symbol']} {tok}: {j['decision']} conf={j['confidence']} p_win={j['p_win']} b={j['payoff_ratio']} {j['ms']}ms {j['model']} effort={j.get('effort')} key={j['apiKeySource']}")
     for v, vs in summary["variants"].items():
         rej = {}
         for r_ in vs["vet"]:
