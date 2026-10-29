@@ -36,6 +36,7 @@ docs/                    리서치·가이드 요약·현재 상태
 > 현재 데스크는 **시작하지 않은 상태**다. [`docs/status.md`](docs/status.md) 참고.
 
 ## 문서
+- **에이전트·작업자 시작점: [`CLAUDE.md`](CLAUDE.md)** (`AGENTS.md`는 같은 파일) → 주제별 구조 문서 [`docs/project/`](docs/project/)
 - [리포스트 리서치](docs/research-reposts.md)
 - [가이드 파라미터 요약](docs/guide-params.md)
 - [현재 상태·체크 결과·필요한 키 목록](docs/status.md)
