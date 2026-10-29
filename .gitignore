@@ -6,3 +6,8 @@ __pycache__/
 .env*
 worldmonitor/
 tools/
+
+# Claude CLI runner outputs (local only)
+.claude-cli-runs/
+claude-cli-runs/
+data/

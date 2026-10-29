@@ -1,0 +1,6 @@
+state/
+logs/
+__pycache__/
+manual/variant_cycles/
+.env
+*.key
