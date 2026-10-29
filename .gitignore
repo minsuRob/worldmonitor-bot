@@ -11,3 +11,6 @@ tools/
 .claude-cli-runs/
 claude-cli-runs/
 data/
+
+# Claude Code local worktrees/settings
+.claude/
