@@ -3,6 +3,7 @@ Usage: python3 manual/variant_report.py [--json]"""
 import sys, os, json, glob
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.dirname(HERE))
 import run_variants as RV
+import gen_rules_doc   # book legend built from the rule code
 from common import kst_str
 
 def stats(v):
@@ -51,4 +52,4 @@ if __name__ == "__main__":
         print(f"  {r['variant']:>4}: " + (", ".join(f"{k} {n}" for k, n in r["judge_models"].items()) or "-"))
     b = rows[0]
     print(f"BASE also had {b['legacy_manual_cycles_before_runner']} manual cycles before the variant runner (all SKIP, no fills).")
-    print("A=EV rule (p*b-(1-p)-3%>0)  B=top holder 8% (old C)  C=aggressive momentum rider  D=aggressive early sniper (Claude veto)  | shared RISK identical; C/D add own exits")
+    print(gen_rules_doc.legend())

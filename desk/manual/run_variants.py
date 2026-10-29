@@ -17,15 +17,11 @@
 
 Books (rules in manual/book_rules.py; shared RISK identical everywhere and never loosened, C/D only ADD exits after it):
   BASE  existing ledger state/desk.db, rules from config.py, Claude BUY/SKIP
-  A     Claude EV rule on its own job: BUY iff p_win*payoff_ratio - (1-p_win) - 0.03 > 0   (VET = BASE)
-  B     VET_TOP_HOLDER_MAX 0.05 -> 0.08 (the old C book, moved 2026-10-29)
-  C     AGGRESSIVE momentum rider: h1 +10%..+150%, h6 >= 0, m5 > -8%, m5 buys >= sells, top holder 8%; fixed 10% size, max 5 open;
-        EV buy rule (as A); exits stop -20%, sell 50% at 2x, trail 25% from peak
-  D     AGGRESSIVE early sniper: pair age 5m..24h, liq >= $5k, top holder 10%, >= 50 holders, m5 buys/sells >= 1.3 (>= 10 buys),
-        5m volume pace >= 1.2x 1h pace, m5 > -15%, h1 < 300%; quote token SOL/USDC/USDT only (D_quote_not_sol);
-        no chasing: reject a >= 2.5x run within 30 min on GeckoTerminal 1m candles (D_run30_ge_2.5x; fetch failure -> D_run30_unknown,
-        fail closed; fetched only for candidates that passed every other D check); fixed 5% size, max 10 open, 4% round-trip slippage budget;
-        numeric signal buys, Claude is a rug VETO only (own system prompt); exits stop -35%, sell 50% at 3x, trail 40% from peak
+  A     Claude EV rule on its own job (VET = BASE)
+  B     looser largest-holder limit (the old C book, moved 2026-10-29)
+  C     AGGRESSIVE momentum rider, EV buy rule, own stop / partial take-profit / trailing stop
+  D     AGGRESSIVE early sniper, numeric signal buys, Claude is a rug VETO only (own system prompt), own exits
+  Numbers: the generated table in desk/README.md (manual/gen_rules_doc.py) - not repeated here so they cannot drift.
 Books A-D: state/variants/<V>.db (same schema as desk.db, each started at $1,000.00 paper).
 No wallets, signing keys, orders or execution calls: DexScreener / RugCheck / Solana RPC (Helius first, key from
 env HELIUS_API_KEY via config.py -> desk .env) reads only.

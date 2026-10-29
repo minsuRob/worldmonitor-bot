@@ -26,7 +26,7 @@
 - 데스크는 Python 3 표준 라이브러리만 쓴다(설치 없음).
 - 파라미터는 `config.py`(BASE)와 `manual/book_rules.py`(장부별)에만 둔다. 숫자를 코드 중간에 박지 않는다.
 - 원 가이드 값과 데스크 가정을 구분한다. 가정에는 `ASSUMED`를 붙인다(예: `MEME_ASSUMED_P_WIN`). → [guide-params](../guide-params.md)
-- 규칙을 바꾸면 `desk/README.md`, [paper-books.md](paper-books.md), 테스트를 같이 고친다.
+- 규칙을 바꾸면 `python3 manual/gen_rules_doc.py --write`로 장부별 규칙 표(`desk/README.md`, [paper-books.md](paper-books.md))를 다시 만들고, 테스트를 같이 고친다. 표를 손으로 고치지 않는다.
 
 ## 보고
 - 시간은 KST. 숫자는 장부 DB·로그·`git` 출력에서만.
