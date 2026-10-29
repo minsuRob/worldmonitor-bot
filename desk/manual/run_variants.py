@@ -22,7 +22,9 @@ Books (rules in manual/book_rules.py; shared RISK identical everywhere and never
   C     AGGRESSIVE momentum rider: h1 +10%..+150%, h6 >= 0, m5 > -8%, m5 buys >= sells, top holder 8%; fixed 10% size, max 5 open;
         EV buy rule (as A); exits stop -20%, sell 50% at 2x, trail 25% from peak
   D     AGGRESSIVE early sniper: pair age 5m..24h, liq >= $5k, top holder 10%, >= 50 holders, m5 buys/sells >= 1.3 (>= 10 buys),
-        5m volume pace >= 1.2x 1h pace, m5 > -15%, h1 < 300%; fixed 5% size, max 10 open, 4% round-trip slippage budget;
+        5m volume pace >= 1.2x 1h pace, m5 > -15%, h1 < 300%; quote token SOL/USDC/USDT only (D_quote_not_sol);
+        no chasing: reject a >= 2.5x run within 30 min on GeckoTerminal 1m candles (D_run30_ge_2.5x; fetch failure -> D_run30_unknown,
+        fail closed; fetched only for candidates that passed every other D check); fixed 5% size, max 10 open, 4% round-trip slippage budget;
         numeric signal buys, Claude is a rug VETO only (own system prompt); exits stop -35%, sell 50% at 3x, trail 40% from peak
 Books A-D: state/variants/<V>.db (same schema as desk.db, each started at $1,000.00 paper).
 No wallets, signing keys, orders or execution calls: DexScreener / RugCheck / Solana RPC (Helius first, key from
@@ -207,6 +209,7 @@ def prepare():
         with rules(v):
             for cand, ci in zip(cands, cinfo):
                 row = c.execute("SELECT * FROM candidates WHERE id=?", (cand["id"],)).fetchone()
+                run30 = None
                 pre = BR.precheck(v, json.loads(cand["data"]), cand["pair_created"], t0)   # numeric, no API calls
                 if cand["token"] in held:
                     r_, chk, det = "REJECT", "0_already_held", "this book already holds this token"
@@ -217,6 +220,9 @@ def prepare():
                         r_, chk, det = bots.vet_one(c, row, lg)
                         post = BR.postcheck(v, c.execute("SELECT holders FROM candidates WHERE id=?", (cand["id"],)).fetchone()["holders"]) if r_ != "REJECT" else None
                         if post: r_, (chk, det) = "REJECT", post
+                        if r_ != "REJECT" and BR.PARAMS[v].get("run30"):   # D: 1m candles, only for candidates that passed everything else
+                            rej, run30 = BR.run30_check(v, cand["pair"], t0, lg)
+                            if rej: r_, (chk, det) = "REJECT", rej
                     except Exception as e: r_, chk, det = "REJECT", "error", f"{type(e).__name__}: {e}"
                 det = _fix_detail(det)
                 c.execute("UPDATE candidates SET status=?, vet_result=?, vet_check=?, vet_detail=?, vet_ts=? WHERE id=?",
@@ -224,7 +230,7 @@ def prepare():
                 order, k_raw, k_cap, oreason = bots.planned_meme_order(c, cand["liquidity"])
                 res_list.append({"cand": cand["id"], "vid": cand["id"], "token": cand["token"], "symbol": cand["symbol"], "score": cand["score"],
                                  "vet_result": r_, "vet_check": chk, "vet_detail": det, "planned_order": round(order, 2),
-                                 "order_reason": oreason, "kelly_capped": k_cap, "_ci": ci})
+                                 "order_reason": oreason, "kelly_capped": k_cap, "_ci": ci} | ({"run30": run30} if run30 else {}))
                 lg.info(f"[{run_id}] {v} vet {cand['symbol']} {r_} {chk or ''} {det}")
             out["books"][v] = {"scan_kept": len(cands), "scan_drops": drops, "state": book_state(c), "rules": book_rules_text(v)}
         c.execute("INSERT OR REPLACE INTO vcycles (run_id,variant,ts_prepare,scanned,passed) VALUES (?,?,?,?,?)",
@@ -318,7 +324,8 @@ def finish(run_id, no_judge=False):
         c = vdb(v); vs = {"vet": [], "decisions": [], "orders": [], "fills": [], "risk": []}
         with rules(v):
             for r_ in cyc["variants"][v]:
-                vs["vet"].append({k: r_[k] for k in ("symbol", "token", "vet_result", "vet_check", "vet_detail", "planned_order")})
+                vs["vet"].append({k: r_[k] for k in ("symbol", "token", "vet_result", "vet_check", "vet_detail", "planned_order")}
+                                 | ({"run30": r_["run30"]} if r_.get("run30") else {}))
                 if r_["vet_result"] == "REJECT": continue
                 d = decisions.get((v, r_["token"])); j = (d or {}).get("json")
                 if not j:
