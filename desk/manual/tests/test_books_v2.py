@@ -28,7 +28,8 @@ def check(name, cond, info=""):
 
 T = time.time()
 def pair(h1=0, h6=0, m5=0, b5=20, s5=10, vm5=1000, vh1=6000, age_min=120, liq=50_000):
-    return {"priceChange": {"m5": m5, "h1": h1, "h6": h6}, "txns": {"m5": {"buys": b5, "sells": s5}, "h1": {"buys": 100, "sells": 80}},
+    return {"quoteToken": {"address": "So11111111111111111111111111111111111111112", "symbol": "SOL"},
+            "priceChange": {"m5": m5, "h1": h1, "h6": h6}, "txns": {"m5": {"buys": b5, "sells": s5}, "h1": {"buys": 100, "sells": 80}},
             "volume": {"m5": vm5, "h1": vh1, "h24": 50_000, "h6": 20_000}, "liquidity": {"usd": liq}, "pairCreatedAt": (T - age_min * 60) * 1000}
 def pc(p): return p["pairCreatedAt"] / 1000
 

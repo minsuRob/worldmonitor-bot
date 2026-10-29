@@ -9,6 +9,8 @@ def f_hc(mint, lg): CALLS[("das", mint)] += 1; return (500, False, 1, "fake-das"
 def f_pair(pair): CALLS[("pair", pair)] += 1; return ({"liquidity": {"usd": 10**9}}, None)
 bots.top_holders_rpc, bots.holder_count_helius, bots.pair_by_address = f_rpc, f_hc, f_pair
 import run_variants as rv
+import book_rules as BR   # D no-chasing check: flat fake 1m candles, no GeckoTerminal call
+BR.fetch_ohlcv_1m = lambda pool, lg=None, limit=40, t=None: ([[int(time.time()) - 60 * i, 1, 1.01, 0.99, 1, 10] for i in range(40)], "fake")
 assert rv.DESK.startswith("/tmp/deskdry2"); rv.STORE = "/tmp/deskdry2_store"
 base = rv.vdb("BASE")
 rows = [dict(r) for r in base.execute("SELECT * FROM candidates WHERE symbol IN ('PIPER','NETWORK','FLOAT','VERSUS','PHONK') GROUP BY symbol")]
