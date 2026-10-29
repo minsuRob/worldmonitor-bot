@@ -74,8 +74,9 @@ def runner_requested(rundir):
     if not os.path.exists(p): return out
     for line in open(p):
         if not line.strip(): continue
-        rec = json.loads(line)
-        out[rec.get("id")] = (rec.get("requestedModel"), rec.get("requestedEffort"))
+        try: rec = json.loads(line)
+        except ValueError: continue   # metadata only, read after a successful import: a bad line -> model/effort None, never abort finish
+        if isinstance(rec, dict): out[rec.get("id")] = (rec.get("requestedModel"), rec.get("requestedEffort"))
     return out
 
 @contextlib.contextmanager
