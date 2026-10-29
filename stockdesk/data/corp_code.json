@@ -1,0 +1,2 @@
+{"source": "DART corpCode.xml (manual monthly refresh; TBC). stock_code -> corp_code. Seed only; DART list.json already carries stock_code so this map is optional.",
+ "updated": "2026-10-29", "map": {}}

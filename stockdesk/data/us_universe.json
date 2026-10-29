@@ -1,0 +1,22 @@
+{"source": "manual seed (S&P500 + Nasdaq100 subset; TBC — replace with a full constituent list, refresh quarterly)",
+ "updated": "2026-10-29",
+ "rows": [
+  {"code": "AAPL", "name": "Apple", "sector": "Tech"}, {"code": "MSFT", "name": "Microsoft", "sector": "Tech"},
+  {"code": "NVDA", "name": "NVIDIA", "sector": "Tech"}, {"code": "AMZN", "name": "Amazon", "sector": "Consumer"},
+  {"code": "GOOGL", "name": "Alphabet", "sector": "Tech"}, {"code": "META", "name": "Meta", "sector": "Tech"},
+  {"code": "TSLA", "name": "Tesla", "sector": "Consumer"}, {"code": "AVGO", "name": "Broadcom", "sector": "Tech"},
+  {"code": "BRK.B", "name": "Berkshire Hathaway", "sector": "Financial"}, {"code": "JPM", "name": "JPMorgan", "sector": "Financial"},
+  {"code": "LLY", "name": "Eli Lilly", "sector": "Health"}, {"code": "V", "name": "Visa", "sector": "Financial"},
+  {"code": "UNH", "name": "UnitedHealth", "sector": "Health"}, {"code": "XOM", "name": "Exxon", "sector": "Energy"},
+  {"code": "MA", "name": "Mastercard", "sector": "Financial"}, {"code": "COST", "name": "Costco", "sector": "Consumer"},
+  {"code": "HD", "name": "Home Depot", "sector": "Consumer"}, {"code": "PG", "name": "Procter & Gamble", "sector": "Consumer"},
+  {"code": "NFLX", "name": "Netflix", "sector": "Tech"}, {"code": "JNJ", "name": "Johnson & Johnson", "sector": "Health"},
+  {"code": "ABBV", "name": "AbbVie", "sector": "Health"}, {"code": "WMT", "name": "Walmart", "sector": "Consumer"},
+  {"code": "CRM", "name": "Salesforce", "sector": "Tech"}, {"code": "BAC", "name": "Bank of America", "sector": "Financial"},
+  {"code": "ORCL", "name": "Oracle", "sector": "Tech"}, {"code": "AMD", "name": "AMD", "sector": "Tech"},
+  {"code": "KO", "name": "Coca-Cola", "sector": "Consumer"}, {"code": "CVX", "name": "Chevron", "sector": "Energy"},
+  {"code": "ADBE", "name": "Adobe", "sector": "Tech"}, {"code": "PEP", "name": "PepsiCo", "sector": "Consumer"},
+  {"code": "QCOM", "name": "Qualcomm", "sector": "Tech"}, {"code": "INTC", "name": "Intel", "sector": "Tech"},
+  {"code": "AMAT", "name": "Applied Materials", "sector": "Tech"}, {"code": "MU", "name": "Micron", "sector": "Tech"},
+  {"code": "PLTR", "name": "Palantir", "sector": "Tech"}, {"code": "SMCI", "name": "Super Micro", "sector": "Tech"}
+ ]}
